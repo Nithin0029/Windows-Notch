@@ -1,0 +1,124 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>Notch</title>
+<style>
+  :root { --spring: cubic-bezier(.32, 1.24, .42, 1); --accent: #fff; --flare: 10px; }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; color: #fff;
+    font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+
+  /* ---- the notch: flush with the top edge, rounded bottom, concave "shoulders" like a MacBook notch */
+  #notch { position: absolute; top: 0; left: 50%; width: 200px; height: 34px; cursor: default;
+    transform: translate(-50%, -110%); transform-origin: 50% 0;
+    transition: width .6s var(--spring), height .6s var(--spring), transform .4s var(--spring); }
+  #notch.ready { transform: translate(-50%, 0); }
+  #notch.ready.lift { transform: translate(-50%, 0) scale(1.05); }
+  #body { position: absolute; inset: 0; background: #000; overflow: hidden; border-radius: 0 0 14px 14px;
+    transition: border-radius .6s var(--spring), box-shadow .4s; }
+  #notch[data-state="expanded"] #body { box-shadow: 0 16px 40px rgba(0, 0, 0, .45); }
+  .flare { position: absolute; top: 0; width: var(--flare); height: var(--flare); }
+  .flare.l { right: 100%; background: radial-gradient(circle at 0 100%, transparent calc(var(--flare) - .6px), #000 var(--flare)); }
+  .flare.r { left: 100%; background: radial-gradient(circle at 100% 100%, transparent calc(var(--flare) - .6px), #000 var(--flare)); }
+
+  .layer { position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center;
+    opacity: 0; filter: blur(8px); transform: scale(.92); pointer-events: none;
+    transition: opacity .2s ease, filter .3s ease, transform .45s var(--spring); }
+  .layer.on { opacity: 1; filter: none; transform: none; pointer-events: auto; transition-delay: .09s; }
+
+  /* ---- compact */
+  .cin { width: 100%; height: 34px; box-sizing: border-box; padding: 0 14px 0 15px; display: flex; align-items: center; justify-content: space-between; }
+  .ctime { font-size: 13.5px; font-weight: 600; letter-spacing: .2px; font-variant-numeric: tabular-nums; }
+  .cr { display: flex; align-items: center; gap: 8px; }
+  .dots { display: flex; gap: 4px; }
+  .pdot { display: block; width: 7px; height: 7px; border-radius: 50%; }
+  .pdot.mic { background: #ff9f0a; box-shadow: 0 0 6px #ff9f0a; }
+  .pdot.cam { background: #30d158; box-shadow: 0 0 6px #30d158; }
+  .art { flex-shrink: 0; background: #2a2a2e center / cover no-repeat; }
+  .art.sm { width: 22px; height: 22px; border-radius: 6px; }
+  .art.lg { width: 64px; height: 64px; border-radius: 15px; box-shadow: 0 6px 18px rgba(0, 0, 0, .4); }
+  .art.empty { display: grid; place-items: center; color: rgba(255, 255, 255, .5); }
+  .art.empty svg { width: 55%; height: 55%; }
+  .batw { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .bat { width: 25px; height: 12px; display: block; }
+  .ctimer { display: flex; align-items: center; gap: 6px; color: #ff9f0a; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ring { width: 16px; height: 16px; transform: rotate(-90deg); }
+
+  .wave { display: flex; align-items: center; gap: 2.5px; height: 16px; }
+  .wave i { display: block; width: 3px; height: 100%; border-radius: 2px; background: var(--accent); animation: wv .9s ease-in-out infinite; }
+  .wave i:nth-child(2) { animation-delay: -.25s; animation-duration: .8s; }
+  .wave i:nth-child(3) { animation-delay: -.5s; animation-duration: 1.1s; }
+  .wave i:nth-child(4) { animation-delay: -.15s; animation-duration: .7s; }
+  .wave i:nth-child(5) { animation-delay: -.4s; }
+  @keyframes wv { 0%, 100% { transform: scaleY(.25); } 50% { transform: scaleY(1); } }
+
+  /* ---- volume / brightness HUD: the notch widens, icon on the left wing, level on the right */
+  .hud { width: 100%; height: 34px; box-sizing: border-box; padding: 0 16px; display: flex; align-items: center; gap: 12px; }
+  .hicon { width: 18px; height: 18px; flex-shrink: 0; display: grid; place-items: center; }
+  .hicon svg { width: 18px; height: 18px; }
+  .hbar { flex: 1; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .2); overflow: hidden; }
+  .hbar i { display: block; height: 100%; width: 0; border-radius: 3px; background: #fff; transition: width .14s ease-out; }
+  .hval { width: 30px; text-align: right; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .hud.muted .hbar i { background: rgba(255, 255, 255, .35); }
+
+  /* ---- alerts */
+  .tin { width: 100%; height: 60px; box-sizing: border-box; padding: 0 18px 0 10px; display: flex; align-items: center; gap: 12px; }
+  .ticon { width: 42px; height: 42px; flex-shrink: 0; border-radius: 11px; overflow: hidden; display: grid; place-items: center; }
+  .ticon img, .ticon svg { width: 100%; height: 100%; display: block; }
+  .ticon .art { width: 42px; height: 42px; border-radius: 10px; }
+  .ttext { flex: 1; min-width: 0; }
+  .ttext .t, .meta .t { font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ttext .s, .meta .a { font-size: 12.5px; color: rgba(255, 255, 255, .6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .tright { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+  /* ---- expanded */
+  .exp { width: 400px; box-sizing: border-box; padding: 16px 20px 14px; }
+  .player { display: flex; align-items: center; gap: 14px; }
+  .meta { flex: 1; min-width: 0; }
+  .meta .t { font-size: 15.5px; }
+  .meta .app { font-size: 11px; color: rgba(255, 255, 255, .4); margin-top: 3px; text-transform: uppercase; letter-spacing: .5px; }
+  .prog { display: flex; align-items: center; gap: 10px; margin-top: 14px; font-size: 11px; color: rgba(255, 255, 255, .55); font-variant-numeric: tabular-nums; }
+  .bar { flex: 1; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .18); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: #fff; transition: width .5s linear; }
+  .ctrls { display: flex; justify-content: center; gap: 30px; margin-top: 8px; }
+  button { all: unset; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: #fff; cursor: default;
+    transition: background .15s, transform .12s; }
+  button:hover { background: rgba(255, 255, 255, .1); }
+  button:active { transform: scale(.88); }
+  button svg { width: 22px; height: 22px; }
+  button.big svg { width: 30px; height: 30px; }
+  .clock { display: flex; align-items: center; justify-content: space-between; padding: 2px 2px 0; }
+  .bigtime { font-size: 46px; font-weight: 300; line-height: 1; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+  .date { font-size: 13px; color: rgba(255, 255, 255, .6); margin-top: 7px; }
+  .bring { position: relative; width: 58px; height: 58px; }
+  .bring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .bring span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 600; }
+  .sliders { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .srow { display: flex; align-items: center; gap: 10px; }
+  .srow .hicon { color: rgba(255, 255, 255, .75); }
+  .srow .hbar { height: 6px; cursor: default; }
+  .srow .hval { color: rgba(255, 255, 255, .6); font-weight: 500; }
+  .trow { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding-top: 11px;
+    border-top: 1px solid rgba(255, 255, 255, .09); font-size: 13px; color: rgba(255, 255, 255, .75); }
+  .tl { display: flex; align-items: center; gap: 7px; font-variant-numeric: tabular-nums; }
+  .tl svg { width: 16px; height: 16px; color: #ff9f0a; }
+  .chips { display: flex; gap: 6px; }
+  .chip { width: auto; height: 26px; padding: 0 11px; border-radius: 13px; background: rgba(255, 255, 255, .1); font-size: 12px; font-weight: 600; }
+  .chip:hover { background: rgba(255, 255, 255, .2); }
+  .chip.warn { background: rgba(255, 159, 10, .2); color: #ffb340; }
+</style>
+</head>
+<body>
+  <div id="notch">
+    <div class="flare l"></div>
+    <div class="flare r"></div>
+    <div id="body">
+      <div id="compact" class="layer on"></div>
+      <div id="toast" class="layer"></div>
+      <div id="expanded" class="layer"></div>
+    </div>
+  </div>
+  <script src="notch.js"></script>
+</body>
+</html>

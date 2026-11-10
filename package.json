@@ -1,0 +1,16 @@
+{
+  "name": "windows-notch",
+  "version": "0.1.0",
+  "description": "A MacBook-style notch for Windows: now playing, volume & brightness HUD, mic/camera indicators, battery and timers.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": ["windows", "notch", "dynamic-island", "electron", "desktop", "customization"],
+  "author": "Nithin0029",
+  "license": "MIT",
+  "os": ["win32"],
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}

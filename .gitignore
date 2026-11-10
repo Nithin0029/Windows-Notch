@@ -1,0 +1,19 @@
+# dependencies (reinstall with `npm install`)
+node_modules/
+
+# build output
+dist/
+out/
+
+# logs & OS clutter
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# editor / local settings
+.vscode/
+.idea/
+.claude/
+.env
