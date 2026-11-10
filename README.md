@@ -1,4 +1,4 @@
-# windows-notch
+# Windows-Notch
 
 A MacBook-style **notch** for Windows. It sits at the top centre of your screen, shows what's going on, and gets out of the way when it isn't needed.
 
