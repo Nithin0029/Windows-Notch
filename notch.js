@@ -1,12 +1,14 @@
 // Notch renderer: compact notch, volume/brightness HUD, alerts, expanded panel.
 const notch = document.getElementById('notch');
-const L = { compact: document.getElementById('compact'), toast: document.getElementById('toast'), expanded: document.getElementById('expanded') };
+const L = { compact: document.getElementById('compact'), toast: document.getElementById('toast'), expanded: document.getElementById('expanded'), drop: document.getElementById('drop') };
 
 const st = {
   media: null, art: null, battery: null, timer: null,
   volume: null,       // { level 0..1, muted }
   brightness: null,   // 0..100, null when the screen has no software brightness
   privacy: { mic: [], cam: [] },
+  shelf: [],          // [{ path, name, dir, thumb }]
+  dropping: false,    // files are being dragged over the notch
   expanded: false, toast: null, queue: [], hover: false,
 };
 const bootAt = Date.now();
@@ -28,6 +30,9 @@ const ICON = {
   sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2" fill="currentColor"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>',
   mic: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="8.5" y="2.5" width="7" height="12" rx="3.5"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5v3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   cam: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="2.5" y="6" width="13.5" height="12" rx="3"/><path d="M17.5 10.2 21.5 7.5v9l-4-2.7z"/></svg>',
+  tray: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.5l2.6-7.2c.3-.8 1-1.3 1.9-1.3h9c.9 0 1.6.5 1.9 1.3l2.6 7.2V18c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2z"/><path d="M3 13.5h5l1.5 2.5h5l1.5-2.5h5"/></svg>',
+  folder: '<svg viewBox="0 0 24 24"><path d="M2.5 7c0-1.1.9-2 2-2h4.6l2 2.2h8.4c1.1 0 2 .9 2 2V18c0 1.1-.9 2-2 2h-15c-1.1 0-2-.9-2-2z" fill="#4aa8ff"/><path d="M2.5 9.5h19V18c0 1.1-.9 2-2 2h-15c-1.1 0-2-.9-2-2z" fill="#7cc4ff"/></svg>',
+  file: '<svg viewBox="0 0 24 24"><path d="M6 2.5h8l5 5V20c0 .8-.7 1.5-1.5 1.5h-11.5c-.8 0-1.5-.7-1.5-1.5V4c0-.8.7-1.5 1.5-1.5z" fill="#e9e9ee"/><path d="M14 2.5v4c0 .6.4 1 1 1h4" fill="#b9b9c2"/></svg>',
 };
 function speaker(level, muted) {
   const waves = muted ? '<path d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
@@ -97,7 +102,25 @@ function compactHTML() {
   else if (playing()) right = wave();
   else if (st.media) right = `<span class="ctime" id="c-time"></span>`;
   else right = st.battery ? batteryChip() : `<span class="ctime" id="c-date" style="opacity:.6;font-weight:500"></span>`;
-  return `<div class="cin">${left}<span class="cr">${privacyDots()}${right}</span></div>`;
+  return `<div class="cin">${left}<span class="cr">${privacyDots()}${shelfBadge()}${right}</span></div>`;
+}
+
+// ------------------------------------------------------------ shelf pieces
+const shelfBadge = () => (st.shelf.length ? `<span class="sbadge" title="Shelf">${ICON.tray}${st.shelf.length}</span>` : '');
+
+function shelfHTML() {
+  if (!st.shelf.length) return '';
+  const tiles = st.shelf.map((s, i) =>
+    `<div class="tile" draggable="true" data-i="${i}" title="${esc(s.name)}&#10;Drag out to use · double-click to open · right-click to show in folder">` +
+    `<div class="thumb">${s.thumb ? `<img src="${s.thumb}" alt="">` : (s.dir ? ICON.folder : ICON.file)}</div>` +
+    `<div class="tname">${esc(s.name)}</div><button class="tx" data-act="shelf-remove" data-i="${i}" title="Remove from Shelf">×</button></div>`).join('');
+  return `<div class="shelf"><div class="shead"><span class="tl">${ICON.tray}Shelf <span class="muted">${st.shelf.length}</span></span>` +
+    `<button class="chip" data-act="shelf-clear">Clear</button></div><div class="tiles">${tiles}</div></div>`;
+}
+
+function dropHTML() {
+  return `<div class="dropzone"><div class="dz">${ICON.tray}<div><div class="t">Drop to add to Shelf</div>` +
+    `<div class="s">Files stay where they are. The Shelf just keeps them handy.</div></div></div></div>`;
 }
 
 function hudHTML(kind) {
@@ -122,6 +145,10 @@ function toastHTML(t) {
       icon = `<div style="color:${t.color};width:26px;height:26px">${t.cam ? ICON.cam : ICON.mic}</div>`;
       right = `<i class="pdot ${t.cam ? 'cam' : 'mic'}"></i>`;
       break;
+    case 'shelf':
+      icon = t.thumb ? `<img src="${t.thumb}" alt="" style="object-fit:contain">` : `<div style="color:#64b5ff;width:28px;height:28px">${ICON.tray}</div>`;
+      right = `<span class="sbadge">${ICON.tray}${st.shelf.length}</span>`;
+      break;
     case 'timer':
       icon = `<div style="color:#ff9f0a;width:28px;height:28px">${ICON.timer}</div>`;
       right = `<span style="color:#ff9f0a">0:00</span>`;
@@ -134,7 +161,8 @@ function slidersHTML() {
   let s = '';
   if (st.volume) s += `<div class="srow"><span class="hicon" id="s-vol-icon"></span><div class="hbar" data-slider="volume"><i id="s-vol"></i></div><span class="hval" id="s-vol-val"></span></div>`;
   if (st.brightness !== null) s += `<div class="srow"><span class="hicon">${ICON.sun}</span><div class="hbar" data-slider="brightness"><i id="s-bri"></i></div><span class="hval" id="s-bri-val"></span></div>`;
-  return s ? `<div class="sliders">${s}</div>` : '';
+  // With files on the Shelf, volume (left) and brightness (right) share one row to keep the panel short.
+  return s ? `<div class="sliders${st.shelf.length ? ' row' : ''}">${s}</div>` : '';
 }
 
 function expandedHTML() {
@@ -153,37 +181,69 @@ function expandedHTML() {
   const trow = st.timer
     ? `<div class="trow"><span class="tl">${ICON.timer}<span id="e-timer"></span> remaining</span><div class="chips"><button class="chip warn" data-act="cancel-timer">Cancel</button></div></div>`
     : `<div class="trow"><span class="tl">${ICON.timer}Timer</span><div class="chips">${[1, 5, 15, 25].map((n) => `<button class="chip" data-timer="${n}">${n}m</button>`).join('')}</div>${m ? batteryChip() : ''}</div>`;
-  return `<div class="exp">${top}${slidersHTML()}${trow}</div>`;
+  return `<div class="exp">${top}${slidersHTML()}${shelfHTML()}${trow}</div>`;
 }
 
 // ------------------------------------------------------------ render
 function render() {
-  const state = st.expanded ? 'expanded' : st.toast ? 'toast' : 'compact';
+  const state = st.dropping ? 'drop' : st.expanded ? 'expanded' : st.toast ? 'toast' : 'compact';
   const m = st.media, b = st.battery, p = st.privacy;
   const key = [state, m && m.track, m && m.status, m && m.dur > 0, st.art && st.art.length, !!st.timer,
     b && b.charging, b && Math.round(b.level * 100), st.toast && st.toast.id, p.mic.length > 0, p.cam.length > 0,
-    !!st.volume, st.brightness !== null].join('|');
+    !!st.volume, st.brightness !== null, st.shelf.map((s) => s.path).join('|')].join('|');
   if (key !== lastKey) {
     lastKey = key;
     const layer = L[state];
-    layer.innerHTML = state === 'compact' ? compactHTML() : state === 'toast' ? toastHTML(st.toast) : expandedHTML();
+    const tilesScroll = layer.querySelector('.tiles')?.scrollLeft || 0;
+    layer.innerHTML = state === 'compact' ? compactHTML() : state === 'toast' ? toastHTML(st.toast)
+      : state === 'drop' ? dropHTML() : expandedHTML();
+    const tiles = layer.querySelector('.tiles');
+    if (tiles) tiles.scrollLeft = tilesScroll;
     for (const k in L) L[k].classList.toggle('on', k === state);
     let w, h, r;
     if (state === 'compact') {
       w = (m || st.timer) ? 244 : 204;
       if (p.mic.length || p.cam.length) w += 18;
+      if (st.shelf.length) w += 44;
       h = 34; r = 14;
     } else if (state === 'toast') {
       if (HUD_KINDS.has(st.toast.kind)) { w = 330; h = 34; r = 14; }
       else { w = 360; h = 60; r = 22; }
-    } else { w = 400; h = layer.firstElementChild.offsetHeight; r = 30; }
+    } else if (state === 'drop') { w = 400; h = 100; r = 28; }
+    else { w = 400; h = layer.firstElementChild.offsetHeight; r = 30; }
     notch.style.width = w + 'px';
     notch.style.height = h + 'px';
     document.getElementById('body').style.borderRadius = `0 0 ${r}px ${r}px`;
     notch.dataset.state = state;
     notch.classList.toggle('lift', state === 'compact' && st.hover);
+    updateShape(w, h);
   }
   tick();
+}
+
+// ------------------------------------------------------------ window shape
+// Only the notch (plus a small margin for the hover "lift" and the shoulders) is part of the window,
+// so the rest of the screen stays clickable and Explorer can drop files straight onto the notch.
+// When the notch grows the shape grows at once; when it shrinks we wait for the animation to finish.
+let shapeApplied = null;
+let shapeTimer = null;
+function shapeFor(w, h) {
+  const side = 10 + 8;                       // shoulder + margin
+  const W = w + side * 2;
+  return { x: Math.round((window.innerWidth - W) / 2), y: 0, width: Math.round(W), height: Math.round(h + 8) };
+}
+function updateShape(w, h) {
+  const target = shapeFor(w, h);
+  const a = shapeApplied;
+  const now = a ? {
+    x: Math.min(a.x, target.x), y: 0,
+    width: Math.max(a.x + a.width, target.x + target.width) - Math.min(a.x, target.x),
+    height: Math.max(a.height, target.height),
+  } : target;
+  api.setShape(now);
+  shapeApplied = now;
+  clearTimeout(shapeTimer);
+  shapeTimer = setTimeout(() => { api.setShape(target); shapeApplied = target; }, 700);
 }
 
 function mediaPos() {
@@ -311,22 +371,37 @@ function chime() {
 function setHover(v) {
   if (v === st.hover) return;
   st.hover = v;
-  api.setIgnore(!v);
   notch.classList.toggle('lift', v && notch.dataset.state === 'compact');
   clearTimeout(collapseTimer);
-  if (!v && st.expanded && !dragging) collapseTimer = setTimeout(() => { st.expanded = false; render(); }, 900);
+  if (!v && st.expanded && !dragging) scheduleCollapse();
 }
 document.addEventListener('mousemove', (e) => {
+  draggingOut = false;
   const el = document.elementFromPoint(e.clientX, e.clientY);
   setHover(!!(el && el.closest('#notch')) || !!dragging);
   if (dragging) dragSlider(e);
 });
 document.addEventListener('mouseleave', () => { if (!dragging) setHover(false); });
 
+function scheduleCollapse() {
+  clearTimeout(collapseTimer);
+  collapseTimer = setTimeout(() => { st.expanded = false; render(); }, 900);
+}
+// The main process watches the real pointer position. It's the source of truth for "the pointer
+// left the notch", so an open panel always closes when you move away, whatever the hover state says.
+api.onPointer((inside) => {
+  if (inside) { clearTimeout(collapseTimer); return; }
+  if (dragging) return;
+  setHover(false);
+  if (st.expanded) scheduleCollapse();
+});
+
 // scroll anywhere on the notch = change volume
 let wheelAcc = 0;
 notch.addEventListener('wheel', (e) => {
   e.preventDefault();
+  const tiles = e.target.closest('.tiles');
+  if (tiles) { tiles.scrollLeft += e.deltaY || e.deltaX; return; }   // scrolling the shelf, not the volume
   wheelAcc += e.deltaY;
   while (Math.abs(wheelAcc) >= 40) {
     const step = wheelAcc < 0 ? 0.04 : -0.04;
@@ -361,7 +436,8 @@ notch.addEventListener('mousedown', (e) => {
 document.addEventListener('mouseup', () => { if (dragging) { dragging = null; suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); } });
 let suppressClick = false;
 
-notch.addEventListener('click', (e) => {
+// Listen on the whole (notch-shaped) window, so a click on the thin margin around the notch counts too.
+document.addEventListener('click', (e) => {
   if (suppressClick || e.target.closest('[data-slider]')) return;
   const btn = e.target.closest('button');
   if (btn) {
@@ -369,16 +445,86 @@ notch.addEventListener('click', (e) => {
     if (btn.dataset.timer) return startTimer(Number(btn.dataset.timer));
     const act = btn.dataset.act;
     if (act === 'cancel-timer') { st.timer = null; render(); return; }
+    if (act === 'shelf-clear') { api.shelfClear(); return; }
+    if (act === 'shelf-remove') { const s = st.shelf[Number(btn.dataset.i)]; if (s) api.shelfRemove(s.path); return; }
     if (act) {
       api.media(act);
       if (act === 'toggle' && st.media) { st.media.pos = mediaPos(); st.media.updated = Date.now(); st.media.status = playing() ? 'Paused' : 'Playing'; render(); }
     }
     return;
   }
+  if (e.target.closest('.tile')) return;     // tiles: double-click opens, drag moves out
+  // Inside the open panel, only the top strip (where the notch sits) closes it; clicking the clock,
+  // the date or empty space does nothing. Moving the pointer away also closes it.
+  if (st.expanded && e.clientY > 40) return;
   if (st.toast) { clearTimeout(toastTimer); st.toast = null; st.queue = []; }
   st.expanded = !st.expanded;
+  clearTimeout(collapseTimer);
   render();
 });
+
+// ------------------------------------------------------------ file shelf: drag in, drag out
+let draggingOut = false;   // true while one of our own tiles is being dragged out
+let dropTimer = null;
+const tileItem = (el) => { const t = el.closest('.tile'); return t ? st.shelf[Number(t.dataset.i)] : null; };
+
+notch.addEventListener('dblclick', (e) => { const s = tileItem(e.target); if (s) api.shelfOpen(s.path); });
+notch.addEventListener('contextmenu', (e) => { const s = tileItem(e.target); if (s) { e.preventDefault(); api.shelfReveal(s.path); } });
+notch.addEventListener('dragstart', (e) => {
+  const s = tileItem(e.target);
+  e.preventDefault();               // the OS drag is started by the main process so real files are dragged
+  if (!s) return;
+  draggingOut = true;
+  api.shelfDrag(s.path);
+});
+
+const hasFiles = (e) => !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
+function endDrop() { clearTimeout(dropTimer); if (st.dropping) { console.info('[drop] zone closed'); st.dropping = false; render(); } }
+// Windows stops sending dragover while the pointer is held still, so silence must NOT close the
+// drop zone. It closes only on a real "left the window" dragleave (or after the drop itself).
+function dragOver(e) {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  clearTimeout(dropTimer);
+  if (draggingOut) { e.dataTransfer.dropEffect = 'none'; return; }
+  e.dataTransfer.dropEffect = 'copy';
+  if (!st.dropping) { st.dropping = true; console.info(`[drop] ${e.type} effectAllowed=${e.dataTransfer.effectAllowed}`); render(); }
+}
+document.addEventListener('dragenter', dragOver);
+document.addEventListener('dragover', dragOver);
+document.addEventListener('dragleave', (e) => {
+  // dragleave also fires when the notch redraws or its window shape changes under a pointer that
+  // hasn't moved. Those must not close the zone (the drop would then land on whatever is behind
+  // the shrunken notch). Only a pointer that is really outside the notch's area counts as leaving.
+  const a = shapeApplied;
+  const x = e.clientX, y = e.clientY;
+  const inside = a && !(x === 0 && y === 0) && x > a.x + 1 && x < a.x + a.width - 1 && y >= 0 && y < a.height - 1;
+  if (inside) return;
+  clearTimeout(dropTimer);
+  dropTimer = setTimeout(endDrop, 120);
+});
+document.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  endDrop();
+  if (draggingOut) { draggingOut = false; return; }
+  const files = [...(e.dataTransfer.files || [])];
+  const paths = files.map((f) => api.pathForFile(f)).filter(Boolean);
+  console.info(`[drop] files=${files.length} paths=${paths.length} types=${[...(e.dataTransfer.types || [])].join(',')}`);
+  if (!paths.length) {
+    if (files.length) showToast({ kind: 'shelf', title: 'Couldn’t add that', sub: 'Only files and folders from your PC can go on the Shelf' });
+    return;
+  }
+  const added = await api.shelfAdd(paths);
+  if (added) {
+    const first = st.shelf.find((s) => s.path === paths[0]);
+    showToast({ kind: 'shelf', title: added === 1 ? 'Added to Shelf' : `Added ${added} items to Shelf`,
+      sub: added === 1 && first ? first.name : 'Click the notch to see them', thumb: added === 1 && first ? first.thumb : null });
+  } else {
+    showToast({ kind: 'shelf', title: 'Already on the Shelf', sub: paths.length === 1 ? paths[0].split('\\').pop() : `${paths.length} items` });
+  }
+});
+
+api.onShelf((items) => { st.shelf = Array.isArray(items) ? items : []; render(); });
 
 // ------------------------------------------------------------ data sources
 api.onMedia((m) => {

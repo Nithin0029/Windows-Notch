@@ -253,7 +253,14 @@ function Handle-Command($c) {
   switch ($c.cmd) {
     'media' { if ($script:mediaOk) { Media-Command $c.action; $script:lastMedia = 0 } }
     'volume' {
-      if ($null -ne $c.delta) { $cur = [SysNative]::GetVolume(); if ($cur -ge 0) { [SysNative]::SetVolume([float]($cur + [double]$c.delta)) } }
+      if ($null -ne $c.delta) {
+        $cur = [SysNative]::GetVolume()
+        if ($cur -ge 0) {
+          $next = $cur + [double]$c.delta
+          if ($c.snap) { $next = [math]::Round($next * 50) / 50 }   # volume keys move in 2% steps, like Windows
+          [SysNative]::SetVolume([float]$next)
+        }
+      }
       elseif ($null -ne $c.level) { [SysNative]::SetVolume([float]$c.level) }
       $script:lastVolPoll = 0
     }

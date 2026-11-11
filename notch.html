@@ -99,6 +99,9 @@
   .srow .hicon { color: rgba(255, 255, 255, .75); }
   .srow .hbar { height: 6px; cursor: default; }
   .srow .hval { color: rgba(255, 255, 255, .6); font-weight: 500; }
+  .sliders.row { flex-direction: row; gap: 18px; }
+  .sliders.row .srow { flex: 1; min-width: 0; gap: 8px; }
+  .sliders.row .hval { width: 24px; }
   .trow { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding-top: 11px;
     border-top: 1px solid rgba(255, 255, 255, .09); font-size: 13px; color: rgba(255, 255, 255, .75); }
   .tl { display: flex; align-items: center; gap: 7px; font-variant-numeric: tabular-nums; }
@@ -107,6 +110,38 @@
   .chip { width: auto; height: 26px; padding: 0 11px; border-radius: 13px; background: rgba(255, 255, 255, .1); font-size: 12px; font-weight: 600; }
   .chip:hover { background: rgba(255, 255, 255, .2); }
   .chip.warn { background: rgba(255, 159, 10, .2); color: #ffb340; }
+
+  /* ---- file shelf */
+  .sbadge { display: flex; align-items: center; gap: 4px; padding: 0 7px; height: 20px; border-radius: 10px;
+    background: rgba(10, 132, 255, .22); color: #64b5ff; font-size: 11.5px; font-weight: 700; }
+  .sbadge svg { width: 13px; height: 13px; }
+  .shelf { margin-top: 14px; padding-top: 11px; border-top: 1px solid rgba(255, 255, 255, .09); }
+  .shead { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: rgba(255, 255, 255, .75); }
+  .shead .tl svg { color: #64b5ff; }
+  .muted { color: rgba(255, 255, 255, .4); }
+  .tiles { display: flex; gap: 6px; margin-top: 9px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .tiles::-webkit-scrollbar { display: none; }
+  .tile { position: relative; flex: 0 0 68px; width: 68px; padding: 5px 2px 4px; border-radius: 10px; text-align: center;
+    transition: background .15s; }
+  .tile:hover { background: rgba(255, 255, 255, .08); }
+  .thumb { width: 28px; height: 28px; margin: 0 auto; display: grid; place-items: center; border-radius: 6px; overflow: hidden; }
+  .thumb img { max-width: 28px; max-height: 28px; display: block; -webkit-user-drag: none; pointer-events: none; }
+  .thumb svg { width: 24px; height: 24px; }
+  .tname { margin-top: 4px; font-size: 10.5px; line-height: 1.25; color: rgba(255, 255, 255, .8);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tx { position: absolute; top: 0; right: 6px; width: 16px; height: 16px; border-radius: 50%; font-size: 12px; line-height: 1;
+    background: rgba(70, 70, 76, .95); color: #fff; opacity: 0; transition: opacity .12s; }
+  .tile:hover .tx { opacity: 1; }
+  .tx:hover { background: #ff453a; }
+
+  /* ---- drop zone (files dragged over the notch) */
+  .dropzone { width: 400px; height: 100px; box-sizing: border-box; padding: 12px; }
+  .dz { height: 100%; box-sizing: border-box; border: 2px dashed rgba(100, 181, 255, .55); border-radius: 18px;
+    background: rgba(10, 132, 255, .1); display: flex; align-items: center; justify-content: center; gap: 14px; }
+  .dz > svg { width: 30px; height: 30px; color: #64b5ff; animation: bob 1s ease-in-out infinite; }
+  .dz .t { font-size: 14.5px; font-weight: 600; }
+  .dz .s { font-size: 12px; color: rgba(255, 255, 255, .55); margin-top: 2px; }
+  @keyframes bob { 0%, 100% { transform: translateY(-2px); } 50% { transform: translateY(3px); } }
 </style>
 </head>
 <body>
@@ -117,6 +152,7 @@
       <div id="compact" class="layer on"></div>
       <div id="toast" class="layer"></div>
       <div id="expanded" class="layer"></div>
+      <div id="drop" class="layer"></div>
     </div>
   </div>
   <script src="notch.js"></script>
