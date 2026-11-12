@@ -1,0 +1,32 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' width='512' height='512'>
+<defs>
+  <linearGradient id='P1-bg' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#23232c'/><stop offset='1' stop-color='#0c0c11'/></linearGradient>
+  <radialGradient id='P1-glow' cx='256' cy='96' r='260' gradientUnits='userSpaceOnUse'><stop offset='0' stop-color='#8b7cf6' stop-opacity='.38'/><stop offset='1' stop-color='#8b7cf6' stop-opacity='0'/></radialGradient>
+  <linearGradient id='P1-glass' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#fff' stop-opacity='.07'/><stop offset='.45' stop-color='#fff' stop-opacity='0'/></linearGradient>
+  <linearGradient id='P1-card' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#1d1d25'/><stop offset='1' stop-color='#131319'/></linearGradient>
+  <linearGradient id='P1-art' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#8b7cf6'/><stop offset='1' stop-color='#5b4bd6'/></linearGradient>
+  <filter id='P1-soft' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='5'/></filter>
+  <filter id='P1-shadow' x='-20%' y='-20%' width='140%' height='160%'><feDropShadow dx='0' dy='14' stdDeviation='16' flood-color='#000' flood-opacity='.55'/></filter>
+  <clipPath id='P1-c'><path d='M128 16H384C446 16 496 66 496 128V384C496 446 446 496 384 496H128C66 496 16 446 16 384V128C16 66 66 16 128 16Z'/></clipPath>
+</defs>
+<path d='M128 16H384C446 16 496 66 496 128V384C496 446 446 496 384 496H128C66 496 16 446 16 384V128C16 66 66 16 128 16Z' fill='url(#P1-bg)'/>
+<g clip-path='url(#P1-c)'>
+  <rect x='16' y='16' width='480' height='480' fill='url(#P1-glow)'/>
+  <rect x='16' y='16' width='480' height='480' fill='url(#P1-glass)'/>
+  <g filter='url(#P1-shadow)'>
+    <rect x='80' y='204' width='352' height='232' rx='40' fill='url(#P1-card)' stroke='rgba(255,255,255,.10)' stroke-width='2'/>
+  </g>
+  <rect x='110' y='234' width='92' height='92' rx='20' fill='url(#P1-art)'/>
+  <rect x='224' y='250' width='160' height='18' rx='9' fill='rgba(255,255,255,.88)'/>
+  <rect x='224' y='286' width='108' height='14' rx='7' fill='rgba(255,255,255,.34)'/>
+  <rect x='110' y='354' width='292' height='8' rx='4' fill='rgba(255,255,255,.14)'/>
+  <rect x='110' y='354' width='168' height='8' rx='4' fill='#c9c1ff'/>
+  <path d='M196 388 v22 l-18 -11 z M180 388 v22 l-18 -11 z' fill='rgba(255,255,255,.55)'/>
+  <rect x='244' y='385' width='9' height='28' rx='3' fill='#fff'/><rect x='259' y='385' width='9' height='28' rx='3' fill='#fff'/>
+  <path d='M316 388 v22 l18 -11 z M332 388 v22 l18 -11 z' fill='rgba(255,255,255,.55)'/>
+  <path d='M97 16 H415 A28 28 0 0 0 387 44 V68 A48 48 0 0 1 339 116 H173 A48 48 0 0 1 125 68 V44 A28 28 0 0 0 97 16 Z' fill='#000'/>
+  <g fill='#e9e6ff' filter='url(#P1-soft)' opacity='.55'><rect x='163' y='51' width='14' height='26' rx='7'/><rect x='187' y='40' width='14' height='48' rx='7'/><rect x='211' y='30' width='14' height='68' rx='7'/><rect x='235' y='44' width='14' height='40' rx='7'/><rect x='259' y='34' width='14' height='60' rx='7'/><rect x='283' y='47' width='14' height='34' rx='7'/><rect x='307' y='54' width='14' height='20' rx='7'/></g><g fill='#e9e6ff'><rect x='163' y='51' width='14' height='26' rx='7'/><rect x='187' y='40' width='14' height='48' rx='7'/><rect x='211' y='30' width='14' height='68' rx='7'/><rect x='235' y='44' width='14' height='40' rx='7'/><rect x='259' y='34' width='14' height='60' rx='7'/><rect x='283' y='47' width='14' height='34' rx='7'/><rect x='307' y='54' width='14' height='20' rx='7'/></g>
+  <circle cx='348' cy='64' r='8' fill='#34c759'/>
+</g>
+<path d='M128 16H384C446 16 496 66 496 128V384C496 446 446 496 384 496H128C66 496 16 446 16 384V128C16 66 66 16 128 16Z' fill='none' stroke='rgba(255,255,255,.12)' stroke-width='3'/>
+</svg>
