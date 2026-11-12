@@ -1,43 +1,62 @@
-﻿// MacBook-style notch for Windows
+﻿// Windows Notch: a MacBook-style notch for Windows (Electron main process)
 const { app, BrowserWindow, screen, ipcMain, shell, Menu, Tray, nativeImage, nativeTheme, globalShortcut, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const updater = require('./updater');
+const { searchCity, fetchWeather } = require('./weather');
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
   return;
 }
 
-// Keep the transparent always-on-top window painting even when "occluded".
+// Keep the transparent always-on-top windows painting even when "occluded".
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 
-// The window is large enough for the biggest panel, but its *shape* is cut down to the
-// notch itself, so everything else on screen stays clickable (and files can be dropped on it).
+const REPO_URL = 'https://github.com/Nithin0029/Windows-Notch';
+const ICON_PATH = path.join(__dirname, 'build', 'icon.png');
+
+// Each notch window is large enough for the biggest panel, but its *shape* is cut down to the notch
+// itself, so everything else on screen stays clickable (and files can be dropped on it).
 const NOTCH_W = 640;
 const NOTCH_H = 560;
 
-let notchWin = null;
 let tray = null;
 let helper = null;
+let settingsWin = null;
 let quitting = false;
-let fullscreen = false;
+let fullscreenDisplayId = null;     // display that has a fullscreen app in front (its notch hides)
 let lastMedia = null;
-const lastSystem = {};   // latest volume / brightness / privacy / power, replayed when the notch (re)loads
+const lastSystem = {};              // latest volume / brightness / privacy / power / toggles / weather, replayed on (re)load
 
-// ---------------------------------------------------------------- settings
-const DEFAULTS = { volumeKeys: true, clipboard: true };
-let settings = { ...DEFAULTS };
+// ================================================================= settings
+const DEFAULTS = {
+  volumeKeys: true,
+  clipboard: true,
+  display: 'primary',               // 'primary' | 'all' | 'id:<displayId>'
+  shortcutEnabled: true,
+  shortcut: 'Ctrl+Alt+N',
+  weather: { enabled: true, city: null, units: 'celsius' },   // city: { name, region, lat, lon }
+  autoUpdate: true,
+};
+let settings = structuredClone(DEFAULTS);
 const userFile = (name) => path.join(app.getPath('userData'), name);
+
 function loadSettings() {
-  try { settings = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(userFile('settings.json'), 'utf8')) }; } catch { settings = { ...DEFAULTS }; }
+  let saved = {};
+  try { saved = JSON.parse(fs.readFileSync(userFile('settings.json'), 'utf8')); } catch { /* first run */ }
+  settings = { ...structuredClone(DEFAULTS), ...saved, weather: { ...DEFAULTS.weather, ...(saved.weather || {}) } };
 }
 function saveSettings() {
   fs.mkdirSync(app.getPath('userData'), { recursive: true });
   fs.writeFileSync(userFile('settings.json'), JSON.stringify(settings, null, 2));
 }
+function loginOpts() {
+  return app.isPackaged ? {} : { path: process.execPath, args: [path.resolve(__dirname)] };
+}
 
-// ---------------------------------------------------------------- helper (PowerShell: media, volume, brightness, mic/cam)
+// ================================================================= helper (PowerShell: media, volume, brightness, mic/cam, toggles)
 // In the installed app the code is packed into app.asar, which PowerShell can't read; the build
 // unpacks helper.ps1 next to it (app.asar.unpacked), so point there.
 const HELPER_PATH = path.join(__dirname, 'helper.ps1').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
@@ -69,10 +88,6 @@ function helperSend(obj) {
   if (helper && helper.stdin.writable) helper.stdin.write(JSON.stringify(obj) + '\n');
 }
 
-function toNotch(channel, data) {
-  if (notchWin && !notchWin.isDestroyed()) notchWin.webContents.send(channel, data);
-}
-
 function onHelper(m) {
   switch (m.type) {
     case 'media':
@@ -93,7 +108,14 @@ function onHelper(m) {
       toNotch('notch:system', m);
       break;
     case 'fullscreen':
-      fullscreen = !!m.value;
+      fullscreenDisplayId = null;
+      if (m.value && m.rect) {
+        // the helper reports the fullscreen window's monitor in physical pixels; find that display
+        const dip = screen.screenToDipRect(null, { x: m.rect.x, y: m.rect.y, width: m.rect.w, height: m.rect.h });
+        fullscreenDisplayId = screen.getDisplayMatching(dip).id;
+      } else if (m.value) {
+        fullscreenDisplayId = screen.getPrimaryDisplay().id;
+      }
       updateVisibility();
       updateVolumeKeys();
       break;
@@ -103,7 +125,96 @@ function onHelper(m) {
   }
 }
 
-// ---------------------------------------------------------------- volume keys
+// ================================================================= notch windows (one per chosen display)
+const notches = new Map();   // displayId -> { win, shape, inside }
+
+function toNotch(channel, data) {
+  for (const n of notches.values()) if (!n.win.isDestroyed()) n.win.webContents.send(channel, data);
+}
+function notchFor(webContents) {
+  for (const n of notches.values()) if (n.win.webContents === webContents) return n;
+  return null;
+}
+
+function targetDisplays() {
+  const all = screen.getAllDisplays();
+  if (settings.display === 'all') return all;
+  if (String(settings.display).startsWith('id:')) {
+    const d = all.find((x) => String(x.id) === settings.display.slice(3));
+    if (d) return [d];
+  }
+  return [screen.getPrimaryDisplay()];   // also the fallback when a chosen display is unplugged
+}
+function boundsFor(display) {
+  const b = display.bounds;
+  return { x: Math.round(b.x + (b.width - NOTCH_W) / 2), y: b.y, width: NOTCH_W, height: NOTCH_H };
+}
+function clampShape(r) {
+  const x = Math.max(0, Math.min(NOTCH_W - 1, Math.round(r.x)));
+  const y = Math.max(0, Math.round(r.y));
+  return { x, y, width: Math.max(1, Math.min(NOTCH_W - x, Math.round(r.width))), height: Math.max(1, Math.min(NOTCH_H - y, Math.round(r.height))) };
+}
+
+function createNotch(display) {
+  const win = new BrowserWindow({
+    ...boundsFor(display),
+    title: 'Notch',
+    transparent: true, frame: false, resizable: false, movable: false, minimizable: false, maximizable: false,
+    fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, focusable: false, hasShadow: false,
+    backgroundColor: '#00000000', show: false, type: 'toolbar', thickFrame: false,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
+  });
+  const n = { win, shape: null, inside: false, displayId: display.id };
+  // Until the page reports the notch's real size, only the idle notch area is part of the window.
+  n.shape = clampShape({ x: (NOTCH_W - 240) / 2, y: 0, width: 240, height: 46 });
+  win.setShape([n.shape]);
+  win.setAlwaysOnTop(true, 'pop-up-menu');
+  win.setMenu(null);
+  // Surface the page's console in the app's own output (handy when something misbehaves).
+  win.webContents.on('console-message', (_e, level, message) => { if (level >= 1) console.log('[notch]', message); });
+  win.loadFile(path.join(__dirname, 'notch.html'));
+  win.once('ready-to-show', updateVisibility);
+  return n;
+}
+
+function syncWindows() {
+  const want = targetDisplays();
+  const ids = new Set(want.map((d) => d.id));
+  for (const [id, n] of notches) {
+    if (!ids.has(id)) { if (!n.win.isDestroyed()) n.win.destroy(); notches.delete(id); }
+  }
+  for (const d of want) {
+    const n = notches.get(d.id);
+    if (n && !n.win.isDestroyed()) n.win.setBounds(boundsFor(d));
+    else notches.set(d.id, createNotch(d));
+  }
+  updateVisibility();
+}
+
+function updateVisibility() {
+  for (const [id, n] of notches) {
+    if (n.win.isDestroyed()) continue;
+    const hide = fullscreenDisplayId === id;
+    if (!hide && !n.win.isVisible()) n.win.showInactive();
+    else if (hide && n.win.isVisible()) n.win.hide();
+  }
+}
+
+// A window cut to a custom shape isn't reliably told when the pointer leaves it, so the page might
+// not know to close its panel. Watch the real pointer here and report enter/leave per notch.
+setInterval(() => {
+  if (!notches.size) return;
+  const c = screen.getCursorScreenPoint();
+  for (const n of notches.values()) {
+    if (n.win.isDestroyed() || !n.win.isVisible() || !n.shape) continue;
+    const b = n.win.getBounds();
+    const x = c.x - b.x, y = c.y - b.y, s = n.shape;
+    const inside = x >= s.x && x < s.x + s.width && y >= s.y && y < s.y + s.height;
+    if (inside !== n.inside) { n.inside = inside; n.win.webContents.send('notch:pointer', inside); }
+  }
+}, 100);
+
+// ================================================================= volume keys
 // Registering the volume keys as global shortcuts stops Windows from handling them, so its own
 // volume pop-up never appears; we change the volume ourselves and the notch shows the level.
 // While a fullscreen app is in front (notch hidden) the keys are handed back to Windows.
@@ -114,7 +225,7 @@ const VOLUME_KEYS = {
 };
 let volumeKeysActive = false;
 function updateVolumeKeys() {
-  const want = settings.volumeKeys && !fullscreen;
+  const want = settings.volumeKeys && fullscreenDisplayId === null;
   if (want === volumeKeysActive) return;
   if (want) {
     const ok = Object.entries(VOLUME_KEYS).map(([key, fn]) => globalShortcut.register(key, fn));
@@ -125,7 +236,50 @@ function updateVolumeKeys() {
   volumeKeysActive = want;
 }
 
-// ---------------------------------------------------------------- clipboard history
+// ================================================================= keyboard shortcut (open/close the panel)
+let registeredShortcut = null;
+function onShortcut() {
+  // open the notch on the screen the mouse is on (or the only notch there is)
+  const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const n = notches.get(d.id) || notches.values().next().value;
+  if (n && !n.win.isDestroyed()) n.win.webContents.send('notch:command', 'toggle-panel');
+}
+/** (Re)register the panel shortcut from settings. Returns false if Windows/another app refused it. */
+function applyShortcut() {
+  if (registeredShortcut) { globalShortcut.unregister(registeredShortcut); registeredShortcut = null; }
+  if (!settings.shortcutEnabled || !settings.shortcut) return true;
+  try {
+    if (globalShortcut.register(settings.shortcut, onShortcut)) { registeredShortcut = settings.shortcut; return true; }
+  } catch { /* invalid accelerator */ }
+  return false;
+}
+
+// ================================================================= weather
+let weatherTimer = null;
+async function refreshWeather() {
+  const w = settings.weather;
+  if (!w.enabled || !w.city) {
+    lastSystem.weather = { type: 'weather', off: true };
+    toNotch('notch:system', lastSystem.weather);
+    broadcastSettingsState();
+    return;
+  }
+  try {
+    const data = await fetchWeather({ lat: w.city.lat, lon: w.city.lon, units: w.units });
+    lastSystem.weather = { type: 'weather', ...data, place: w.city.name, units: w.units, at: Date.now() };
+    toNotch('notch:system', lastSystem.weather);
+    broadcastSettingsState();
+  } catch (err) {
+    console.error('[weather]', err.message);   // keep showing the last good reading
+  }
+}
+function scheduleWeather() {
+  clearInterval(weatherTimer);
+  refreshWeather();
+  weatherTimer = setInterval(refreshWeather, 20 * 60 * 1000);
+}
+
+// ================================================================= clipboard history
 // Text only, kept in memory only (never written to disk), cleared on quit. Items that password
 // managers mark as private (the standard Windows clipboard flags) are never recorded.
 const CLIP_MAX = 15;
@@ -155,8 +309,9 @@ function pollClipboard() {
   clipItems = [{ id: ++clipSeq, text: text.slice(0, 20000), at: Date.now() }, ...clipItems.filter((c) => c.text !== text)].slice(0, CLIP_MAX);
   sendClips();
 }
+function resetClipWatch() { try { lastClipText = clipboard.readText(); } catch { lastClipText = ''; } }
 
-// ---------------------------------------------------------------- file shelf
+// ================================================================= file shelf
 let shelf = [];   // [{ path, name, dir, thumb }]
 const FALLBACK_DRAG_ICON = (() => {
   const S = 48, buf = Buffer.alloc(S * S * 4);
@@ -180,13 +335,11 @@ async function shelfItem(p) {
   }
   return { path: p, name: path.basename(p) || p, dir, thumb };
 }
-
 function saveShelf() {
   fs.mkdirSync(app.getPath('userData'), { recursive: true });
   fs.writeFileSync(userFile('shelf.json'), JSON.stringify(shelf.map((s) => s.path), null, 2));
 }
 function sendShelf() { toNotch('notch:shelf', shelf); }
-
 async function loadShelf() {
   let paths = [];
   try { paths = JSON.parse(fs.readFileSync(userFile('shelf.json'), 'utf8')); } catch { /* empty */ }
@@ -194,7 +347,6 @@ async function loadShelf() {
   shelf = items.filter(Boolean);
   sendShelf();
 }
-
 async function addToShelf(paths) {
   const fresh = paths.filter((p) => typeof p === 'string' && p && !shelf.some((s) => s.path.toLowerCase() === p.toLowerCase()));
   const items = (await Promise.all(fresh.map(shelfItem))).filter(Boolean);
@@ -204,55 +356,103 @@ async function addToShelf(paths) {
   sendShelf();
   return items.length;
 }
-
 function removeFromShelf(p) {
   shelf = shelf.filter((s) => s.path !== p);
   saveShelf();
   sendShelf();
 }
+function clearShelf() { shelf = []; saveShelf(); sendShelf(); refreshTray(); }
 
-// ---------------------------------------------------------------- window
-function notchBounds() {
-  const b = screen.getPrimaryDisplay().bounds;
-  return { x: Math.round(b.x + (b.width - NOTCH_W) / 2), y: b.y, width: NOTCH_W, height: NOTCH_H };
+// ================================================================= settings window
+function settingsState() {
+  const primaryId = screen.getPrimaryDisplay().id;
+  return {
+    settings,
+    displays: screen.getAllDisplays().map((d, i) => ({
+      id: String(d.id),
+      label: d.label || `Display ${i + 1}`,
+      size: `${d.size.width} × ${d.size.height}`,
+      primary: d.id === primaryId,
+    })),
+    version: app.getVersion(),
+    packaged: app.isPackaged,
+    startWithWindows: app.getLoginItemSettings(loginOpts()).openAtLogin,
+    shortcutActive: !!registeredShortcut,
+    update: updater.getState(),
+    weather: lastSystem.weather || null,
+    repo: REPO_URL,
+  };
+}
+function broadcastSettingsState() {
+  if (settingsWin && !settingsWin.isDestroyed()) settingsWin.webContents.send('settings:state', settingsState());
 }
 
-function clampShape(r) {
-  const x = Math.max(0, Math.min(NOTCH_W - 1, Math.round(r.x)));
-  const y = Math.max(0, Math.round(r.y));
-  return { x, y, width: Math.max(1, Math.min(NOTCH_W - x, Math.round(r.width))), height: Math.max(1, Math.min(NOTCH_H - y, Math.round(r.height))) };
-}
-
-function createWindow() {
-  notchWin = new BrowserWindow({
-    ...notchBounds(),
-    title: 'Notch',
-    transparent: true, frame: false, resizable: false, movable: false, minimizable: false, maximizable: false,
-    fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, focusable: false, hasShadow: false,
-    backgroundColor: '#00000000', show: false, type: 'toolbar', thickFrame: false,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
+function openSettings() {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    if (settingsWin.isMinimized()) settingsWin.restore();
+    settingsWin.show();
+    settingsWin.focus();
+    return;
+  }
+  settingsWin = new BrowserWindow({
+    width: 660, height: 760, minWidth: 560, minHeight: 560,
+    title: 'Windows Notch Settings',
+    icon: fs.existsSync(ICON_PATH) ? ICON_PATH : undefined,
+    backgroundColor: '#111116',
+    show: false,
+    autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#111116', symbolColor: '#d8d8e2', height: 44 },
+    webPreferences: { preload: path.join(__dirname, 'preload-settings.js'), contextIsolation: true, nodeIntegration: false },
   });
-  // Until the page reports the notch's real size, only the idle notch area is part of the window.
-  notchWin.setShape([clampShape({ x: (NOTCH_W - 240) / 2, y: 0, width: 240, height: 46 })]);
-  notchWin.setAlwaysOnTop(true, 'pop-up-menu');
-  notchWin.setMenu(null);
-  // Surface the page's console in the app's own output (handy when something misbehaves).
-  notchWin.webContents.on('console-message', (_e, level, message) => { if (level >= 1) console.log('[notch]', message); });
-  notchWin.loadFile('notch.html');
-  notchWin.once('ready-to-show', updateVisibility);
+  settingsWin.setMenu(null);
+  settingsWin.loadFile(path.join(__dirname, 'settings.html'));
+  settingsWin.once('ready-to-show', () => settingsWin.show());
+  settingsWin.on('closed', () => { settingsWin = null; });
+  // links in the page open in the real browser, never inside the app
+  settingsWin.webContents.setWindowOpenHandler(({ url }) => { if (/^https:\/\//.test(url)) shell.openExternal(url); return { action: 'deny' }; });
 }
 
-function updateVisibility() {
-  if (!notchWin || notchWin.isDestroyed()) return;
-  if (!fullscreen && !notchWin.isVisible()) notchWin.showInactive();
-  else if (fullscreen && notchWin.isVisible()) notchWin.hide();
+async function applySetting(key, value) {
+  switch (key) {
+    case 'volumeKeys': settings.volumeKeys = !!value; updateVolumeKeys(); break;
+    case 'clipboard':
+      settings.clipboard = !!value;
+      if (!value) clipItems = [];
+      resetClipWatch();
+      sendClips();
+      break;
+    case 'startWithWindows': app.setLoginItemSettings({ ...loginOpts(), openAtLogin: !!value }); break;
+    case 'display': settings.display = String(value); syncWindows(); break;
+    case 'shortcutEnabled':
+      settings.shortcutEnabled = !!value;
+      if (!applyShortcut()) return 'That shortcut is already used by another app. Pick a different one below.';
+      break;
+    case 'shortcut': {
+      const prev = settings.shortcut;
+      settings.shortcut = String(value || '');
+      if (!applyShortcut()) {
+        settings.shortcut = prev;
+        applyShortcut();
+        return 'That shortcut is already used by Windows or another app. Try a different one.';
+      }
+      break;
+    }
+    case 'weatherEnabled': settings.weather.enabled = !!value; scheduleWeather(); break;
+    case 'weatherCity':
+      settings.weather.city = value && typeof value.lat === 'number' && typeof value.lon === 'number'
+        ? { name: String(value.name || ''), region: String(value.region || ''), lat: value.lat, lon: value.lon }
+        : null;
+      scheduleWeather();
+      break;
+    case 'weatherUnits': settings.weather.units = value === 'fahrenheit' ? 'fahrenheit' : 'celsius'; scheduleWeather(); break;
+    case 'autoUpdate': settings.autoUpdate = !!value; if (value) updater.check(); break;
+    default: return `Unknown setting: ${key}`;
+  }
+  return null;
 }
 
-// ---------------------------------------------------------------- tray
-function loginOpts() {
-  return app.isPackaged ? {} : { path: process.execPath, args: [path.resolve(__dirname)] };
-}
-
+// ================================================================= tray
 function trayImage() {
   const S = 32;
   const buf = Buffer.alloc(S * S * 4);
@@ -268,53 +468,36 @@ function trayImage() {
 
 function refreshTray() {
   if (!tray) return;
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Use notch for volume keys', type: 'checkbox', checked: settings.volumeKeys,
-      click: (m) => { settings.volumeKeys = m.checked; saveSettings(); updateVolumeKeys(); } },
-    { label: 'Clear Shelf', enabled: shelf.length > 0, click: () => { shelf = []; saveShelf(); sendShelf(); refreshTray(); } },
-    { label: 'Clipboard history', type: 'checkbox', checked: settings.clipboard,
-      click: (m) => {
-        settings.clipboard = m.checked; saveSettings();
-        if (!m.checked) clipItems = [];
-        try { lastClipText = clipboard.readText(); } catch { lastClipText = ''; }   // don't pick up what's already copied
-        sendClips();
-      } },
+  const u = updater.getState();
+  const items = [
+    { label: 'Settings…', click: openSettings },
+  ];
+  if (u.status === 'ready') items.push({ label: `Restart to update to v${u.version}`, click: () => updater.installNow() });
+  else if (app.isPackaged) items.push({ label: 'Check for updates', enabled: u.status !== 'checking' && u.status !== 'downloading', click: () => updater.check() });
+  items.push(
     { type: 'separator' },
-    { label: 'Start with Windows', type: 'checkbox', checked: app.getLoginItemSettings(loginOpts()).openAtLogin,
-      click: (m) => { app.setLoginItemSettings({ ...loginOpts(), openAtLogin: m.checked }); refreshTray(); } },
-    { label: 'Open Folder', click: () => shell.openPath(app.isPackaged ? path.dirname(process.execPath) : __dirname) },
-    { type: 'separator' },
-    { label: 'Reload', click: () => notchWin?.reload() },
-    { label: 'Quit Notch', click: () => app.quit() },
-  ]));
+    { label: 'Clear Shelf', enabled: shelf.length > 0, click: clearShelf },
+  );
+  if (!app.isPackaged) items.push({ label: 'Reload notch', click: () => { for (const n of notches.values()) n.win.reload(); } });
+  items.push({ type: 'separator' }, { label: 'Quit Windows Notch', click: () => app.quit() });
+  tray.setContextMenu(Menu.buildFromTemplate(items));
+  tray.setToolTip(u.status === 'ready' ? `Windows Notch: update v${u.version} ready` : 'Windows Notch');
 }
 
-// ---------------------------------------------------------------- IPC
-let currentShape = null;
+// ================================================================= IPC: notch windows
 ipcMain.on('set-shape', (e, rect) => {
-  const w = BrowserWindow.fromWebContents(e.sender);
-  if (w && rect && typeof rect.width === 'number') { currentShape = clampShape(rect); w.setShape([currentShape]); }
+  const n = notchFor(e.sender);
+  if (n && rect && typeof rect.width === 'number') { n.shape = clampShape(rect); n.win.setShape([n.shape]); }
 });
-
-// A window cut to a custom shape doesn't get told when the pointer leaves it, so the page would
-// never know to close the panel. Watch the pointer here and report when it leaves the notch area.
-let pointerInside = false;
-setInterval(() => {
-  if (!notchWin || notchWin.isDestroyed() || !notchWin.isVisible() || !currentShape) return;
-  const c = screen.getCursorScreenPoint();
-  const b = notchWin.getBounds();
-  const x = c.x - b.x, y = c.y - b.y, s = currentShape;
-  const inside = x >= s.x && x < s.x + s.width && y >= s.y && y < s.y + s.height;  if (inside !== pointerInside) {
-    pointerInside = inside;
-    notchWin.webContents.send('notch:pointer', inside);
-  }
-}, 100);
 ipcMain.on('ready', (e) => {
   if (lastMedia) e.sender.send('notch:media', lastMedia);
   for (const m of Object.values(lastSystem)) e.sender.send('notch:system', m);
   e.sender.send('notch:shelf', shelf);
-  sendClips();
+  e.sender.send('notch:clip', clipItems.map((c) => ({ id: c.id, at: c.at, preview: c.text.replace(/\s+/g, ' ').trim().slice(0, 160) })));
+  const u = updater.getState();
+  if (u.status === 'ready') e.sender.send('notch:system', { type: 'update', version: u.version, init: true });
 });
+ipcMain.on('notch:open-settings', () => openSettings());
 ipcMain.on('notch:toggle', (_e, what) => {
   if (['wifi', 'bt', 'mic', 'dark'].includes(what)) helperSend({ cmd: 'toggle', what });
 });
@@ -337,7 +520,6 @@ ipcMain.on('notch:volume', (_e, change) => {
 ipcMain.on('notch:brightness', (_e, level) => {
   if (typeof level === 'number') helperSend({ cmd: 'brightness', level: Math.round(Math.max(0, Math.min(100, level))) });
 });
-
 ipcMain.handle('shelf:add', async (_e, paths) => {
   const list = Array.isArray(paths) ? paths : [];
   let n = 0;
@@ -347,7 +529,7 @@ ipcMain.handle('shelf:add', async (_e, paths) => {
   return n;
 });
 ipcMain.on('shelf:remove', (_e, p) => { removeFromShelf(p); refreshTray(); });
-ipcMain.on('shelf:clear', () => { shelf = []; saveShelf(); sendShelf(); refreshTray(); });
+ipcMain.on('shelf:clear', clearShelf);
 ipcMain.on('shelf:open', (_e, p) => { if (shelf.some((s) => s.path === p)) shell.openPath(p); });
 ipcMain.on('shelf:reveal', (_e, p) => { if (shelf.some((s) => s.path === p)) shell.showItemInFolder(p); });
 ipcMain.on('shelf:drag', (e, p) => {
@@ -358,31 +540,66 @@ ipcMain.on('shelf:drag', (e, p) => {
   e.sender.startDrag({ file: p, icon: icon.resize({ width: 64 }) });
 });
 
-// ---------------------------------------------------------------- lifecycle
+// ================================================================= IPC: settings window
+ipcMain.handle('settings:get', () => settingsState());
+ipcMain.handle('settings:set', async (_e, change) => {
+  const error = change && typeof change.key === 'string' ? await applySetting(change.key, change.value) : 'Bad request';
+  saveSettings();
+  refreshTray();
+  return { error, state: settingsState() };
+});
+ipcMain.handle('settings:search-city', async (_e, query) => {
+  try { return { results: await searchCity(query) }; } catch (err) { return { error: `Couldn’t search right now (${err.message}).` }; }
+});
+ipcMain.on('settings:check-updates', () => updater.check());
+ipcMain.on('settings:install-update', () => updater.installNow());
+ipcMain.on('settings:reset-shortcut', async () => {
+  settings.shortcut = DEFAULTS.shortcut;
+  settings.shortcutEnabled = true;
+  applyShortcut();
+  saveSettings();
+  broadcastSettingsState();
+});
+
+// ================================================================= lifecycle
 app.whenReady().then(async () => {
   app.setAppUserModelId('io.github.nithin0029.windows-notch');   // must match "appId" in package.json
   loadSettings();
-  // The installed app starts with Windows by default (it's a desktop shell piece); the tray menu can turn it off.
+  // The installed app starts with Windows by default (it's a desktop shell piece); Settings can turn it off.
   if (app.isPackaged && !settings.firstRunDone) {
     app.setLoginItemSettings({ openAtLogin: true });
     settings.firstRunDone = true;
     saveSettings();
   }
-  createWindow();
+  syncWindows();
   startHelper();
   await loadShelf();
   updateVolumeKeys();
-  try { lastClipText = clipboard.readText(); } catch { /* empty */ }   // start fresh: don't record what's already copied
+  if (!applyShortcut()) console.error(`[notch] shortcut ${settings.shortcut} is taken by another app`);
+  resetClipWatch();                                   // start fresh: don't record what's already copied
   setInterval(pollClipboard, 800);
+  scheduleWeather();
+
   tray = new Tray(trayImage());
-  tray.setToolTip('Notch');
+  tray.on('click', openSettings);
+  updater.init((u) => {
+    console.log(`[update] ${u.status}${u.version ? ` v${u.version}` : ''}${u.error ? `: ${u.error}` : ''}`);
+    if (u.status === 'ready') toNotch('notch:system', { type: 'update', version: u.version });
+    refreshTray();
+    broadcastSettingsState();
+  });
   refreshTray();
-  const reposition = () => notchWin?.setBounds(notchBounds());
-  screen.on('display-metrics-changed', reposition);
-  screen.on('display-added', reposition);
-  screen.on('display-removed', reposition);
+  if (settings.autoUpdate) setTimeout(() => updater.check(), 20 * 1000);
+  setInterval(() => { if (settings.autoUpdate) updater.check(); }, 6 * 60 * 60 * 1000);
+
+  const onDisplaysChanged = () => { syncWindows(); broadcastSettingsState(); };
+  screen.on('display-metrics-changed', onDisplaysChanged);
+  screen.on('display-added', onDisplaysChanged);
+  screen.on('display-removed', onDisplaysChanged);
 });
 
+// Launching the app again (e.g. from the Start menu) opens Settings instead of a second notch.
+app.on('second-instance', () => openSettings());
 app.on('window-all-closed', () => { /* stay in the tray */ });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('before-quit', () => { quitting = true; if (helper) helper.kill(); });

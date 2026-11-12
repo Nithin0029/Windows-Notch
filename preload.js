@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('api', {
   shelfReveal: (p) => ipcRenderer.send('shelf:reveal', p),
   shelfDrag: (p) => ipcRenderer.send('shelf:drag', p),
   toggle: (what) => ipcRenderer.send('notch:toggle', what),            // 'wifi' | 'bt' | 'mic' | 'dark'
+  openSettings: () => ipcRenderer.send('notch:open-settings'),
+  onCommand: (cb) => ipcRenderer.on('notch:command', (_e, cmd) => cb(cmd)),   // e.g. 'toggle-panel' from the keyboard shortcut
   clipCopy: (id) => ipcRenderer.send('clip:copy', id),
   clipRemove: (id) => ipcRenderer.send('clip:remove', id),
   clipClear: () => ipcRenderer.send('clip:clear'),

@@ -1,13 +1,13 @@
 {
   "name": "windows-notch",
   "productName": "Windows Notch",
-  "version": "0.2.0",
-  "description": "A MacBook-style notch for Windows: now playing, volume & brightness HUD, mic/camera indicators, battery and timers.",
+  "version": "0.3.0",
+  "description": "A MacBook-style notch for Windows: now playing, volume & brightness HUD, quick toggles, File Shelf, clipboard history, weather and more.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win nsis --x64",
-    "pack": "electron-builder --win dir --x64"
+    "dist": "electron-builder --win nsis --x64 --publish never",
+    "pack": "electron-builder --win dir --x64 --publish never"
   },
   "keywords": [
     "windows",
@@ -22,6 +22,9 @@
   "os": [
     "win32"
   ],
+  "dependencies": {
+    "electron-updater": "^6.8.11"
+  },
   "devDependencies": {
     "electron": "^33.2.0",
     "electron-builder": "^26.18.0"
@@ -37,13 +40,27 @@
     "files": [
       "main.js",
       "preload.js",
+      "preload-settings.js",
+      "updater.js",
+      "weather.js",
+      "weather-icons.js",
       "notch.html",
       "notch.js",
+      "settings.html",
+      "settings.js",
       "helper.ps1",
+      "build/icon.png",
       "package.json"
     ],
     "asarUnpack": [
       "helper.ps1"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Nithin0029",
+        "repo": "Windows-Notch"
+      }
     ],
     "win": {
       "target": "nsis",

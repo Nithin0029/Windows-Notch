@@ -23,24 +23,34 @@ public static class WinNative {
   [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder sb, int n);
   [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr value);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
   [StructLayout(LayoutKind.Sequential)] struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
   [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
   [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFO mi);
 
-  public static void Init() { SetProcessDPIAware(); }
+  // Per-monitor DPI awareness: all coordinates are real pixels on every monitor (needed so the app can
+  // tell which display a fullscreen window is on when monitors use different scaling).
+  public static void Init() {
+    try { if (SetProcessDpiAwarenessContext((IntPtr)(-4))) return; } catch { }
+    SetProcessDPIAware();
+  }
 
-  public static bool IsForegroundFullscreen() {
+  /// <summary>If the foreground window covers its whole monitor (game, video, presentation), returns that
+  /// monitor as "x,y,w,h" in physical pixels; otherwise null.</summary>
+  public static string FullscreenMonitor() {
     IntPtr h = GetForegroundWindow();
-    if (h == IntPtr.Zero) return false;
+    if (h == IntPtr.Zero) return null;
     StringBuilder sb = new StringBuilder(256); GetClassName(h, sb, 256); string c = sb.ToString();
-    if (c == "Progman" || c == "WorkerW" || c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd") return false;
-    if (IsZoomed(h)) return false;
-    RECT r; if (!GetWindowRect(h, out r)) return false;
+    if (c == "Progman" || c == "WorkerW" || c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd") return null;
+    if (IsZoomed(h)) return null;
+    RECT r; if (!GetWindowRect(h, out r)) return null;
     MONITORINFO mi = new MONITORINFO(); mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
-    if (!GetMonitorInfo(MonitorFromWindow(h, 2), ref mi)) return false;
-    return r.L <= mi.rcMonitor.L && r.T <= mi.rcMonitor.T && r.R >= mi.rcMonitor.R && r.B >= mi.rcMonitor.B;
+    if (!GetMonitorInfo(MonitorFromWindow(h, 2), ref mi)) return null;
+    RECT m = mi.rcMonitor;
+    if (r.L <= m.L && r.T <= m.T && r.R >= m.R && r.B >= m.B) return m.L + "," + m.T + "," + (m.R - m.L) + "," + (m.B - m.T);
+    return null;
   }
 
   public static string SquareJpeg(byte[] data, int size) {
@@ -398,7 +408,7 @@ if ($script:brightOk) { Emit @{ type = 'brightness'; level = [SysNative]::Bright
 Emit @{ type = 'power'; hasBattery = [SysNative]::HasBattery() }
 
 $pending = $in.ReadLineAsync()
-$script:lastMedia = 0; $lastFs = 0; $fsState = $false; $script:lastVolPoll = 0; $lastPriv = 0; $script:lastTogglePoll = 0
+$script:lastMedia = 0; $lastFs = 0; $fsState = ''; $script:lastVolPoll = 0; $lastPriv = 0; $script:lastTogglePoll = 0
 while ($true) {
   if ($pending.IsCompleted) {
     if ($pending.IsFaulted -or $null -eq $pending.Result) { break }   # parent went away
@@ -415,8 +425,15 @@ while ($true) {
   if ([SysNative]::BrightChanged) { [SysNative]::BrightChanged = $false; Emit @{ type = 'brightness'; level = [SysNative]::BrightLevel } }
   if ([math]::Abs($now - $lastFs) -ge 1000) {
     $lastFs = $now
-    $fs = [WinNative]::IsForegroundFullscreen()
-    if ($fs -ne $fsState) { $fsState = $fs; Emit @{ type = 'fullscreen'; value = $fs } }
+    $mon = [WinNative]::FullscreenMonitor()
+    $fs = if ($mon) { $mon } else { '' }
+    if ($fs -ne $fsState) {
+      $fsState = $fs
+      if ($mon) {
+        $p = $mon.Split(',')
+        Emit @{ type = 'fullscreen'; value = $true; rect = @{ x = [int]$p[0]; y = [int]$p[1]; w = [int]$p[2]; h = [int]$p[3] } }
+      } else { Emit @{ type = 'fullscreen'; value = $false } }
+    }
   }
   Start-Sleep -Milliseconds 50
 }

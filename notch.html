@@ -125,6 +125,17 @@
   .tg.warn.on .tgi { background: #ff453a; }
   .tg.violet.on .tgi { background: #7c6cf2; }
 
+  /* ---- weather line under the date */
+  .wxl { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12.5px; color: rgba(255, 255, 255, .62); max-width: 250px; }
+  .wxl svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .wxl b { color: #fff; font-weight: 600; font-size: 13.5px; }
+  .wxl span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ---- footer icon buttons */
+  .iconbtn { display: inline-grid; place-items: center; width: 30px; padding: 0; margin-left: 0; }
+  .iconbtn svg { width: 15px; height: 15px; }
+  .trow .chips { align-items: center; }
+
   /* ---- clipboard button + page */
   .csep { width: 1px; height: 18px; background: rgba(255, 255, 255, .14); align-self: center; margin: 0 2px; }
   .clipbtn { display: inline-flex; align-items: center; gap: 4px; padding: 0 9px; }
@@ -192,6 +203,7 @@
       <div id="drop" class="layer"></div>
     </div>
   </div>
+  <script src="weather-icons.js"></script>
   <script src="notch.js"></script>
 </body>
 </html>

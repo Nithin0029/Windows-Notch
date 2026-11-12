@@ -1,0 +1,197 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>Windows Notch Settings</title>
+<style>
+  :root {
+    --bg: #111116; --card: #1a1a21; --card-2: #202029; --line: rgba(255, 255, 255, .07);
+    --text: #ececf2; --muted: #9a9aab; --faint: #6e6e7e; --accent: #8b7cf6; --accent-2: #a597ff; --ok: #30d158; --warn: #ff9f0a; --err: #ff6961;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  body { overflow-y: auto; }
+  ::-webkit-scrollbar { width: 10px; } ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 5px; border: 3px solid var(--bg); }
+
+  /* title bar: draggable, leaves room on the right for the native window buttons */
+  .titlebar { position: sticky; top: 0; z-index: 5; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 150px 0 16px;
+    background: var(--bg); -webkit-app-region: drag; }
+  .titlebar img { width: 20px; height: 20px; }
+  .titlebar span { font-size: 12.5px; color: var(--muted); }
+
+  main { max-width: 620px; margin: 0 auto; padding: 8px 24px 36px; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 2px 22px; }
+  header img { width: 56px; height: 56px; border-radius: 14px; }
+  header h1 { margin: 0; font: 600 22px "Segoe UI Variable Display", "Segoe UI", sans-serif; letter-spacing: -.2px; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+
+  h2 { margin: 26px 4px 8px; font: 600 13px "Segoe UI Variable Text", "Segoe UI", sans-serif; color: var(--muted); letter-spacing: .2px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 16px; padding: 14px 16px; min-height: 64px; }
+  .row + .row { border-top: 1px solid var(--line); }
+  .row .text { flex: 1; min-width: 0; }
+  .row .title { font-weight: 500; }
+  .row .desc { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .row .ico { width: 34px; height: 34px; border-radius: 9px; background: var(--card-2); display: grid; place-items: center; flex-shrink: 0; color: var(--accent-2); }
+  .row .ico svg { width: 18px; height: 18px; }
+  .sub { padding: 0 16px 14px 66px; margin-top: -4px; }
+  .note { font-size: 12px; color: var(--faint); }
+  .error { color: var(--err); font-size: 12.5px; margin-top: 6px; }
+  .hidden { display: none !important; }
+
+  /* switch */
+  .switch { position: relative; width: 42px; height: 22px; flex-shrink: 0; }
+  .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+  .switch span { position: absolute; inset: 0; border-radius: 11px; background: #3a3a46; border: 1px solid rgba(255,255,255,.12); transition: background .18s, border-color .18s; }
+  .switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #d8d8e2; transition: transform .18s, background .18s; }
+  .switch input:checked + span { background: var(--accent); border-color: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(20px); background: #fff; }
+  .switch input:focus-visible + span { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+
+  select, input[type="text"] { height: 34px; padding: 0 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); background: var(--card-2);
+    color: var(--text); font: inherit; outline: none; }
+  select:focus, input[type="text"]:focus { border-color: var(--accent); }
+  select { min-width: 240px; }
+  button { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,.12); background: var(--card-2); color: var(--text);
+    font: 500 13px "Segoe UI Variable Text", "Segoe UI", sans-serif; cursor: pointer; }
+  button:hover { background: #2a2a35; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: var(--accent-2); }
+  button.link { background: none; border: none; color: var(--accent-2); padding: 0 4px; height: auto; }
+  button.link:hover { text-decoration: underline; background: none; }
+  button:disabled { opacity: .5; cursor: default; }
+
+  /* shortcut recorder */
+  .keys { display: inline-flex; align-items: center; gap: 4px; min-width: 150px; justify-content: center; }
+  .keys kbd { display: inline-block; min-width: 26px; padding: 2px 8px; border-radius: 6px; background: #2c2c37; border: 1px solid rgba(255,255,255,.14);
+    border-bottom-width: 2px; font: 600 12px "Segoe UI", sans-serif; text-align: center; }
+  .keys .plus { color: var(--faint); font-size: 11px; }
+  #shortcutBtn.recording { border-color: var(--accent); color: var(--accent-2); }
+
+  /* weather */
+  .search { position: relative; }
+  .search input { width: 100%; }
+  .results { position: absolute; z-index: 3; left: 0; right: 0; top: 38px; background: #24242e; border: 1px solid rgba(255,255,255,.12); border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(0,0,0,.45); overflow: hidden; }
+  .result { padding: 9px 12px; cursor: pointer; }
+  .result:hover, .result.active { background: rgba(139, 124, 246, .18); }
+  .result b { font-weight: 600; } .result span { color: var(--muted); font-size: 12.5px; margin-left: 6px; }
+  .wx { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--card-2); margin-top: 10px; }
+  .wx svg { width: 34px; height: 34px; }
+  .wx .t { font: 600 20px "Segoe UI Variable Display", sans-serif; }
+  .wx .m { color: var(--muted); font-size: 12.5px; }
+  .seg { display: inline-flex; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; overflow: hidden; }
+  .seg button { border: none; border-radius: 0; height: 30px; background: var(--card-2); min-width: 46px; }
+  .seg button.on { background: var(--accent); color: #fff; }
+
+  /* updates */
+  .status { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex-shrink: 0; }
+  .dot.ok { background: var(--ok); } .dot.busy { background: var(--accent-2); animation: pulse 1s infinite; } .dot.err { background: var(--err); } .dot.ready { background: var(--warn); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .bar { height: 4px; border-radius: 2px; background: #2c2c37; overflow: hidden; margin-top: 8px; }
+  .bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+  footer { margin-top: 30px; text-align: center; color: var(--faint); font-size: 12px; }
+</style>
+</head>
+<body>
+  <div class="titlebar"><img src="build/icon.png" alt=""><span>Windows Notch Settings</span></div>
+  <main>
+    <header>
+      <img src="build/icon.png" alt="">
+      <div><h1>Windows Notch</h1><p id="versionLine">Version …</p></div>
+    </header>
+
+    <h2>General</h2>
+    <div class="card">
+      <div class="row">
+        <div class="ico" data-icon="power"></div>
+        <div class="text"><div class="title">Start with Windows</div><div class="desc">Show the notch automatically when you sign in.</div></div>
+        <label class="switch"><input type="checkbox" id="startWithWindows"><span></span></label>
+      </div>
+      <div class="row">
+        <div class="ico" data-icon="volume"></div>
+        <div class="text"><div class="title">Use the notch for volume keys</div><div class="desc">Volume keys show the notch's volume bar instead of the Windows pop-up.</div></div>
+        <label class="switch"><input type="checkbox" id="volumeKeys"><span></span></label>
+      </div>
+      <div class="row">
+        <div class="ico" data-icon="clip"></div>
+        <div class="text"><div class="title">Clipboard history</div><div class="desc">Keeps your last 15 copied texts in the panel. Memory only — never saved to disk; passwords are skipped.</div></div>
+        <label class="switch"><input type="checkbox" id="clipboard"><span></span></label>
+      </div>
+    </div>
+
+    <h2>Display</h2>
+    <div class="card">
+      <div class="row">
+        <div class="ico" data-icon="display"></div>
+        <div class="text"><div class="title">Show the notch on</div><div class="desc">With several screens, pick one or show a notch on each. A fullscreen app hides only its own screen's notch.</div></div>
+        <select id="display"></select>
+      </div>
+    </div>
+
+    <h2>Keyboard shortcut</h2>
+    <div class="card">
+      <div class="row">
+        <div class="ico" data-icon="keyboard"></div>
+        <div class="text"><div class="title">Open the notch with a shortcut</div><div class="desc">Opens or closes the panel on the screen your mouse is on.</div></div>
+        <label class="switch"><input type="checkbox" id="shortcutEnabled"><span></span></label>
+      </div>
+      <div class="row" id="shortcutRow">
+        <div class="ico" style="visibility:hidden"></div>
+        <div class="text"><div class="title">Shortcut</div><div class="desc" id="shortcutHint">Click the button, then press the keys you want.</div>
+          <div class="error hidden" id="shortcutError"></div></div>
+        <button id="shortcutBtn"><span class="keys" id="shortcutKeys"></span></button>
+        <button class="link" id="shortcutReset">Reset</button>
+      </div>
+    </div>
+
+    <h2>Weather</h2>
+    <div class="card">
+      <div class="row">
+        <div class="ico" data-icon="weather"></div>
+        <div class="text"><div class="title">Show weather in the panel</div><div class="desc">Current conditions with today's high and low, next to the clock.</div></div>
+        <label class="switch"><input type="checkbox" id="weatherEnabled"><span></span></label>
+      </div>
+      <div class="row" id="cityRow" style="align-items:flex-start">
+        <div class="ico" style="visibility:hidden"></div>
+        <div class="text">
+          <div class="title">City</div>
+          <div class="search" style="margin-top:8px">
+            <input type="text" id="cityInput" placeholder="Search for your city…" autocomplete="off" spellcheck="false">
+            <div class="results hidden" id="cityResults"></div>
+          </div>
+          <div class="error hidden" id="cityError"></div>
+          <div class="wx hidden" id="wxPreview"></div>
+          <div class="note" style="margin-top:8px">Weather comes from Open-Meteo (free, no account). Only the city name you search and its coordinates are sent.</div>
+        </div>
+        <div class="seg" id="units"><button data-units="celsius">°C</button><button data-units="fahrenheit">°F</button></div>
+      </div>
+    </div>
+
+    <h2>Updates</h2>
+    <div class="card">
+      <div class="row">
+        <div class="ico" data-icon="update"></div>
+        <div class="text"><div class="title">Update automatically</div><div class="desc">Checks GitHub for new versions, downloads them in the background and installs when you quit.</div></div>
+        <label class="switch"><input type="checkbox" id="autoUpdate"><span></span></label>
+      </div>
+      <div class="row">
+        <div class="ico" style="visibility:hidden"></div>
+        <div class="text">
+          <div class="status"><i class="dot" id="updDot"></i><span id="updText">…</span></div>
+          <div class="bar hidden" id="updBar"><i></i></div>
+        </div>
+        <button id="updBtn">Check now</button>
+      </div>
+    </div>
+
+    <footer>
+      Free & open source (MIT) · <button class="link" id="repoLink">View on GitHub</button> · <button class="link" id="releasesLink">Release notes</button>
+    </footer>
+  </main>
+  <script src="weather-icons.js"></script>
+  <script src="settings.js"></script>
+</body>
+</html>

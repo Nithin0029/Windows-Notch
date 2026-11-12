@@ -12,6 +12,8 @@ const st = {
   toggles: null,      // { wifi: 'on'|'off'|null, bt: ..., mic: 'live'|'muted'|null, dark: bool }
   clips: [],          // clipboard history: [{ id, preview, at }]
   view: 'main',       // which page of the open panel: 'main' | 'clip'
+  weather: null,      // { temp, code, isDay, hi, lo, place, units } once a city is set in Settings
+  keyOpened: false,   // the panel was opened with the keyboard shortcut (pointer may be elsewhere)
   expanded: false, toast: null, queue: [], hover: false,
 };
 const bootAt = Date.now();
@@ -40,6 +42,8 @@ const ICON = {
   micOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15.5 10.5V6a3.5 3.5 0 0 0-6.6-1.6M8.5 9v2.5a3.5 3.5 0 0 0 5.6 2.8M5.5 11a6.5 6.5 0 0 0 10.3 5.3M18.5 11a6.4 6.4 0 0 1-.5 2.5M12 17.5V21M3 3l18 18"/></svg>',
   moon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a.6.6 0 0 0-.8-.7A9.5 9.5 0 1 0 21.2 15.4a.6.6 0 0 0-.7-.8z"/></svg>',
   clip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="5" y="4.5" width="14" height="17" rx="2.5"/><path d="M9 4.5V4a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 4v.5" fill="currentColor"/><path d="M8.5 11h7M8.5 15h5" stroke-linecap="round"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>',
   file: '<svg viewBox="0 0 24 24"><path d="M6 2.5h8l5 5V20c0 .8-.7 1.5-1.5 1.5h-11.5c-.8 0-1.5-.7-1.5-1.5V4c0-.8.7-1.5 1.5-1.5z" fill="#e9e9ee"/><path d="M14 2.5v4c0 .6.4 1 1 1h4" fill="#b9b9c2"/></svg>',
 };
@@ -158,6 +162,10 @@ function toastHTML(t) {
       icon = t.thumb ? `<img src="${t.thumb}" alt="" style="object-fit:contain">` : `<div style="color:#64b5ff;width:28px;height:28px">${ICON.tray}</div>`;
       right = `<span class="sbadge">${ICON.tray}${st.shelf.length}</span>`;
       break;
+    case 'update':
+      icon = `<div style="color:#a597ff;width:28px;height:28px">${ICON.download}</div>`;
+      right = '';
+      break;
     case 'timer':
       icon = `<div style="color:#ff9f0a;width:28px;height:28px">${ICON.timer}</div>`;
       right = `<span style="color:#ff9f0a">0:00</span>`;
@@ -185,14 +193,24 @@ function expandedHTML() {
       `<button data-act="toggle" class="big" title="Play/Pause">${playing() ? ICON.pause : ICON.play}</button>` +
       `<button data-act="next" title="Next">${ICON.next}</button></div>`;
   } else {
-    top = `<div class="clock"><div><div class="bigtime" id="e-time"></div><div class="date" id="e-date"></div></div>${batteryRing()}</div>`;
+    top = `<div class="clock"><div><div class="bigtime" id="e-time"></div><div class="date" id="e-date"></div>${weatherLine()}</div>${batteryRing()}</div>`;
   }
   if (st.view === 'clip') return clipViewHTML();
-  const clipBtn = `<button class="chip clipbtn" data-act="view-clip" title="Clipboard history">${ICON.clip}${st.clips.length || ''}</button>`;
+  const clipBtn = `<button class="chip clipbtn" data-act="view-clip" title="Clipboard history">${ICON.clip}${st.clips.length || ''}</button>` +
+    `<button class="chip iconbtn" data-act="settings" title="Settings">${ICON.gear}</button>`;
   const trow = st.timer
-    ? `<div class="trow"><span class="tl">${ICON.timer}<span id="e-timer"></span> remaining</span><div class="chips"><button class="chip warn" data-act="cancel-timer">Cancel</button>${clipBtn}</div></div>`
-    : `<div class="trow"><span class="tl">${ICON.timer}Timer</span><div class="chips">${[1, 5, 15, 25].map((n) => `<button class="chip" data-timer="${n}">${n}m</button>`).join('')}<span class="csep"></span>${clipBtn}</div></div>`;
+    ? `<div class="trow"><span class="tl">${ICON.timer}<span id="e-timer"></span> left</span><div class="chips"><button class="chip warn" data-act="cancel-timer">Cancel</button><span class="csep"></span>${clipBtn}</div></div>`
+    : `<div class="trow"><span class="tl" title="Timer">${ICON.timer}</span><div class="chips">${[1, 5, 15, 25].map((n) => `<button class="chip" data-timer="${n}" title="${n}-minute timer">${n}m</button>`).join('')}<span class="csep"></span>${clipBtn}</div></div>`;
   return `<div class="exp">${top}${togglesHTML()}${slidersHTML()}${shelfHTML()}${trow}</div>`;
+}
+
+// ------------------------------------------------------------ weather (city is chosen in Settings)
+function weatherLine() {
+  const w = st.weather;
+  if (!w || w.off || typeof w.temp !== 'number') return '';
+  const hl = w.hi != null && w.lo != null ? ` · H ${w.hi}° L ${w.lo}°` : '';
+  return `<div class="wxl" title="${esc(WeatherIcons.label(w.code))} in ${esc(w.place || '')}">${WeatherIcons.icon(w.code, w.isDay)}` +
+    `<b>${w.temp}°</b><span>${esc(w.place || WeatherIcons.label(w.code))}${hl}</span></div>`;
 }
 
 // ------------------------------------------------------------ quick toggles
@@ -235,7 +253,7 @@ function render() {
   const key = [state, m && m.track, m && m.status, m && m.dur > 0, st.art && st.art.length, !!st.timer,
     b && b.charging, b && Math.round(b.level * 100), st.toast && st.toast.id, p.mic.length > 0, p.cam.length > 0,
     !!st.volume, st.brightness !== null, st.shelf.map((s) => s.path).join('|'),
-    st.view, JSON.stringify(st.toggles), st.clips.map((c) => c.id).join(',')].join('|');
+    st.view, JSON.stringify(st.toggles), st.clips.map((c) => c.id).join(','), JSON.stringify(st.weather)].join('|');
   if (key !== lastKey) {
     lastKey = key;
     const layer = L[state];
@@ -245,6 +263,7 @@ function render() {
     const tiles = layer.querySelector('.tiles');
     if (tiles) tiles.scrollLeft = tilesScroll;
     for (const k in L) L[k].classList.toggle('on', k === state);
+    fillText();   // put the clock/date/timer text in BEFORE measuring, or empty lines measure as 0px tall
     let w, h, r;
     if (state === 'compact') {
       w = (m || st.timer) ? 244 : 204;
@@ -262,8 +281,24 @@ function render() {
     notch.dataset.state = state;
     notch.classList.toggle('lift', state === 'compact' && st.hover);
     updateShape(w, h);
+    watchPanelSize(state === 'expanded' ? layer.firstElementChild : null);
   }
   tick();
+}
+
+// The open panel can change height after it's drawn (weather arriving, a font finishing loading,
+// the clipboard list growing). Follow its real size so nothing is ever cut off.
+const panelObserver = new ResizeObserver((entries) => {
+  if (notch.dataset.state !== 'expanded') return;
+  const h = Math.ceil(entries[entries.length - 1].target.offsetHeight);
+  if (h && h !== parseInt(notch.style.height, 10)) { notch.style.height = h + 'px'; updateShape(400, h); }
+});
+let observedPanel = null;
+function watchPanelSize(el) {
+  if (observedPanel === el) return;
+  if (observedPanel) panelObserver.unobserve(observedPanel);
+  observedPanel = el;
+  if (el) panelObserver.observe(el);
 }
 
 // ------------------------------------------------------------ window shape
@@ -327,14 +362,19 @@ function updateLevels() {
 }
 
 function tick() {
+  if (st.timer && st.timer.end <= Date.now()) { finishTimer(); return; }
+  fillText();
+}
+
+/** Fill in every live text/bar (clock, date, timers, media position, levels). No side effects. */
+function fillText() {
   setText('c-time', shortTime());
   setText('c-date', new Date().toLocaleDateString([], { weekday: 'short', day: 'numeric' }));
   setText('e-time', shortTime());
   setText('e-date', new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }));
   for (const el of document.querySelectorAll('.citem:not(.copied) .cago')) el.textContent = ago(Number(el.dataset.at));
   if (st.timer) {
-    const left = (st.timer.end - Date.now()) / 1000;
-    if (left <= 0) { finishTimer(); return; }
+    const left = Math.max(0, (st.timer.end - Date.now()) / 1000);
     setText('c-timer', fmt(Math.ceil(left)));
     setText('e-timer', fmt(Math.ceil(left)));
     const ring = document.getElementById('ring-fg');
@@ -435,6 +475,20 @@ function scheduleCollapse() {
 }
 // The main process watches the real pointer position. It's the source of truth for "the pointer
 // left the notch", so an open panel always closes when you move away, whatever the hover state says.
+// Keyboard shortcut (set in Settings): open/close the panel on this screen.
+api.onCommand((cmd) => {
+  if (cmd !== 'toggle-panel') return;
+  clearTimeout(collapseTimer);
+  if (st.expanded) { st.expanded = false; st.keyOpened = false; render(); return; }
+  if (st.toast) { clearTimeout(toastTimer); st.toast = null; st.queue = []; }
+  st.expanded = true;
+  st.keyOpened = true;
+  render();
+  // Opened from the keyboard while the mouse is somewhere else: close by itself after a few seconds,
+  // unless the pointer comes over the panel (then the normal "move away to close" applies).
+  collapseTimer = setTimeout(() => { if (!st.hover) { st.expanded = false; st.keyOpened = false; render(); } }, 6000);
+});
+
 api.onPointer((inside) => {
   if (inside) { clearTimeout(collapseTimer); return; }
   if (dragging) return;
@@ -492,6 +546,7 @@ document.addEventListener('click', (e) => {
     const act = btn.dataset.act;
     if (act === 'cancel-timer') { st.timer = null; render(); return; }
     if (btn.dataset.toggle) { flipToggle(btn.dataset.toggle); return; }
+    if (act === 'settings') { api.openSettings(); st.expanded = false; render(); return; }
     if (act === 'view-clip') { st.view = 'clip'; render(); return; }
     if (act === 'view-main') { st.view = 'main'; render(); return; }
     if (act === 'clip-clear') { api.clipClear(); return; }
@@ -628,6 +683,11 @@ api.onSystem((m) => {
     st.brightness = m.level;
     if (dragging) return;
     if (changed) showHud('brightness'); else render();
+  } else if (m.type === 'weather') {
+    st.weather = m.off ? null : m;
+    render();
+  } else if (m.type === 'update') {
+    if (!m.init) showToast({ kind: 'update', title: 'Update ready', sub: `Version ${m.version} installs when you quit (or restart from the tray)`, duration: 6000 });
   } else if (m.type === 'toggles') {
     st.toggles = { wifi: m.wifi || null, bt: m.bt || null, mic: m.mic || null, dark: !!m.dark };
     render();
