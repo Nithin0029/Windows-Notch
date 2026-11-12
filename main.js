@@ -39,14 +39,23 @@ const DEFAULTS = {
   shortcut: 'Ctrl+Alt+N',
   weather: { enabled: true, city: null, units: 'celsius' },   // city: { name, region, lat, lon }
   autoUpdate: true,
+  appearance: { size: 'normal', accent: 'blue' },             // size: compact | normal | large
+  sections: { toggles: true, sliders: true, shelf: true, timers: true },   // which parts the open panel shows
 };
+const SIZES = ['compact', 'normal', 'large'];
+const ACCENTS = ['blue', 'violet', 'pink', 'orange', 'green', 'teal', 'graphite'];
 let settings = structuredClone(DEFAULTS);
 const userFile = (name) => path.join(app.getPath('userData'), name);
 
 function loadSettings() {
   let saved = {};
   try { saved = JSON.parse(fs.readFileSync(userFile('settings.json'), 'utf8')); } catch { /* first run */ }
-  settings = { ...structuredClone(DEFAULTS), ...saved, weather: { ...DEFAULTS.weather, ...(saved.weather || {}) } };
+  settings = {
+    ...structuredClone(DEFAULTS), ...saved,
+    weather: { ...DEFAULTS.weather, ...(saved.weather || {}) },
+    appearance: { ...DEFAULTS.appearance, ...(saved.appearance || {}) },
+    sections: { ...DEFAULTS.sections, ...(saved.sections || {}) },
+  };
 }
 function saveSettings() {
   fs.mkdirSync(app.getPath('userData'), { recursive: true });
@@ -131,6 +140,11 @@ const notches = new Map();   // displayId -> { win, shape, inside }
 function toNotch(channel, data) {
   for (const n of notches.values()) if (!n.win.isDestroyed()) n.win.webContents.send(channel, data);
 }
+/** Look & layout preferences the notch page needs. */
+function notchPrefs() {
+  return { size: settings.appearance.size, accent: settings.appearance.accent, sections: settings.sections, clipboard: settings.clipboard };
+}
+function sendPrefs() { toNotch('notch:prefs', notchPrefs()); }
 function notchFor(webContents) {
   for (const n of notches.values()) if (n.win.webContents === webContents) return n;
   return null;
@@ -421,6 +435,7 @@ async function applySetting(key, value) {
       if (!value) clipItems = [];
       resetClipWatch();
       sendClips();
+      sendPrefs();   // the panel hides its clipboard button when history is off
       break;
     case 'startWithWindows': app.setLoginItemSettings({ ...loginOpts(), openAtLogin: !!value }); break;
     case 'display': settings.display = String(value); syncWindows(); break;
@@ -447,6 +462,21 @@ async function applySetting(key, value) {
       break;
     case 'weatherUnits': settings.weather.units = value === 'fahrenheit' ? 'fahrenheit' : 'celsius'; scheduleWeather(); break;
     case 'autoUpdate': settings.autoUpdate = !!value; if (value) updater.check(); break;
+    case 'size':
+      if (!SIZES.includes(value)) return 'Unknown size';
+      settings.appearance.size = value;
+      sendPrefs();
+      break;
+    case 'accent':
+      if (!ACCENTS.includes(value)) return 'Unknown colour';
+      settings.appearance.accent = value;
+      sendPrefs();
+      break;
+    case 'section':
+      if (!value || !(value.name in DEFAULTS.sections)) return 'Unknown panel section';
+      settings.sections[value.name] = !!value.on;
+      sendPrefs();
+      break;
     default: return `Unknown setting: ${key}`;
   }
   return null;
@@ -490,6 +520,7 @@ ipcMain.on('set-shape', (e, rect) => {
   if (n && rect && typeof rect.width === 'number') { n.shape = clampShape(rect); n.win.setShape([n.shape]); }
 });
 ipcMain.on('ready', (e) => {
+  e.sender.send('notch:prefs', notchPrefs());
   if (lastMedia) e.sender.send('notch:media', lastMedia);
   for (const m of Object.values(lastSystem)) e.sender.send('notch:system', m);
   e.sender.send('notch:shelf', shelf);

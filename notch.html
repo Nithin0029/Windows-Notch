@@ -5,16 +5,20 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
 <title>Notch</title>
 <style>
-  :root { --spring: cubic-bezier(.32, 1.24, .42, 1); --accent: #fff; --flare: 10px; }
+  :root { --spring: cubic-bezier(.32, 1.24, .42, 1); --accent: #fff; --flare: 10px;
+    --z: 1;                       /* notch size (Settings → Appearance) */
+    --brand: #0a84ff;             /* accent colour (Settings → Appearance) */
+    --brand-soft: color-mix(in srgb, var(--brand) 22%, transparent);
+    --brand-text: color-mix(in srgb, var(--brand) 55%, white); }
   html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; color: #fff;
     font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
 
   /* ---- the notch: flush with the top edge, rounded bottom, concave "shoulders" like a MacBook notch */
   #notch { position: absolute; top: 0; left: 50%; width: 200px; height: 34px; cursor: default;
-    transform: translate(-50%, -110%); transform-origin: 50% 0;
+    transform: translate(-50%, -110%) scale(var(--z)); transform-origin: 50% 0;
     transition: width .6s var(--spring), height .6s var(--spring), transform .4s var(--spring); }
-  #notch.ready { transform: translate(-50%, 0); }
-  #notch.ready.lift { transform: translate(-50%, 0) scale(1.05); }
+  #notch.ready { transform: translate(-50%, 0) scale(var(--z)); }
+  #notch.ready.lift { transform: translate(-50%, 0) scale(calc(var(--z) * 1.05)); }
   #body { position: absolute; inset: 0; background: #000; overflow: hidden; border-radius: 0 0 14px 14px;
     transition: border-radius .6s var(--spring), box-shadow .4s; }
   #notch[data-state="expanded"] #body { box-shadow: 0 16px 40px rgba(0, 0, 0, .45); }
@@ -120,10 +124,10 @@
     color: rgba(255, 255, 255, .85); transition: background .2s, color .2s; }
   .tgi svg { width: 17px; height: 17px; }
   .tgl { font-size: 11px; font-weight: 500; color: rgba(255, 255, 255, .65); white-space: nowrap; }
-  .tg.on .tgi { background: #0a84ff; color: #fff; }
+  .tg.on .tgi { background: var(--brand); color: #fff; }
   .tg.on .tgl { color: rgba(255, 255, 255, .9); }
   .tg.warn.on .tgi { background: #ff453a; }
-  .tg.violet.on .tgi { background: #7c6cf2; }
+  .tg.violet.on .tgi { background: var(--brand); }
 
   /* ---- weather line under the date */
   .wxl { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12.5px; color: rgba(255, 255, 255, .62); max-width: 250px; }
@@ -161,11 +165,11 @@
 
   /* ---- file shelf */
   .sbadge { display: flex; align-items: center; gap: 4px; padding: 0 7px; height: 20px; border-radius: 10px;
-    background: rgba(10, 132, 255, .22); color: #64b5ff; font-size: 11.5px; font-weight: 700; }
+    background: var(--brand-soft); color: var(--brand-text); font-size: 11.5px; font-weight: 700; }
   .sbadge svg { width: 13px; height: 13px; }
   .shelf { margin-top: 14px; padding-top: 11px; border-top: 1px solid rgba(255, 255, 255, .09); }
   .shead { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: rgba(255, 255, 255, .75); }
-  .shead .tl svg { color: #64b5ff; }
+  .shead .tl svg { color: var(--brand-text); }
   .muted { color: rgba(255, 255, 255, .4); }
   .tiles { display: flex; gap: 6px; margin-top: 9px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
   .tiles::-webkit-scrollbar { display: none; }
@@ -184,9 +188,9 @@
 
   /* ---- drop zone (files dragged over the notch) */
   .dropzone { width: 400px; height: 100px; box-sizing: border-box; padding: 12px; }
-  .dz { height: 100%; box-sizing: border-box; border: 2px dashed rgba(100, 181, 255, .55); border-radius: 18px;
-    background: rgba(10, 132, 255, .1); display: flex; align-items: center; justify-content: center; gap: 14px; }
-  .dz > svg { width: 30px; height: 30px; color: #64b5ff; animation: bob 1s ease-in-out infinite; }
+  .dz { height: 100%; box-sizing: border-box; border: 2px dashed color-mix(in srgb, var(--brand) 60%, transparent); border-radius: 18px;
+    background: color-mix(in srgb, var(--brand) 10%, transparent); display: flex; align-items: center; justify-content: center; gap: 14px; }
+  .dz > svg { width: 30px; height: 30px; color: var(--brand-text); animation: bob 1s ease-in-out infinite; }
   .dz .t { font-size: 14.5px; font-weight: 600; }
   .dz .s { font-size: 12px; color: rgba(255, 255, 255, .55); margin-top: 2px; }
   @keyframes bob { 0%, 100% { transform: translateY(-2px); } 50% { transform: translateY(3px); } }

@@ -10,6 +10,12 @@ const ICONS = {
   display: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M9 20h6M12 16v4" stroke-linecap="round"/><path d="M10 4h4v1.5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1z" fill="currentColor"/></svg>',
   keyboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h1M10 10h1M13.5 10h1M17 10h.5M7.5 14h9" stroke-linecap="round"/></svg>',
   weather: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="9" cy="9" r="3.2"/><path d="M9 2.5v1.5M3.5 9H2M4.6 4.6l1 1M13.4 4.6l-1 1"/><path d="M8 19.5h9a3.5 3.5 0 0 0 .4-7 4.8 4.8 0 0 0-9.2 1.3A2.9 2.9 0 0 0 8 19.5z"/></svg>',
+  size: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 15v5h-5M4 4l6 6M20 20l-6-6"/></svg>',
+  palette: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.9 1.5-1.9-.4-1.2.4-2.1 1.6-2.1H17a4 4 0 0 0 4-4c0-5.5-4-10-9-10z"/><circle cx="7.5" cy="11" r="1.3" fill="currentColor"/><circle cx="10" cy="7" r="1.3" fill="currentColor"/><circle cx="14.5" cy="7" r="1.3" fill="currentColor"/></svg>',
+  toggles: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="3" width="8" height="8" rx="2.5"/><rect x="13" y="3" width="8" height="8" rx="2.5"/><rect x="3" y="13" width="8" height="8" rx="2.5"/><rect x="13" y="13" width="8" height="8" rx="2.5" fill="currentColor"/></svg>',
+  sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"/><circle cx="9" cy="8" r="2.3" fill="currentColor"/><circle cx="15" cy="16" r="2.3" fill="currentColor"/></svg>',
+  shelf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.5l2.6-7.2c.3-.8 1-1.3 1.9-1.3h9c.9 0 1.6.5 1.9 1.3l2.6 7.2V18c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2z"/><path d="M3 13.5h5l1.5 2.5h5l1.5-2.5h5"/></svg>',
+  timer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="12" cy="13.5" r="8"/><path d="M12 9.5v4l2.5 2M9.5 2.5h5"/></svg>',
   update: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4.5h-4.5"/></svg>',
 };
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = ICONS[el.dataset.icon] || '';
@@ -28,6 +34,14 @@ function render(s) {
   $('startWithWindows').checked = s.startWithWindows;
   $('volumeKeys').checked = st.volumeKeys;
   $('clipboard').checked = st.clipboard;
+
+  // appearance (the Settings window itself follows the accent colour too)
+  const accentHex = ACCENTS[st.appearance.accent] || ACCENTS.blue;
+  document.documentElement.style.setProperty('--accent', accentHex);
+  document.documentElement.style.setProperty('--accent-2', `color-mix(in srgb, ${accentHex} 72%, white)`);
+  for (const b of document.querySelectorAll('#sizeSeg button')) b.classList.toggle('on', b.dataset.size === st.appearance.size);
+  for (const b of document.querySelectorAll('.swatch')) b.classList.toggle('on', b.dataset.accent === st.appearance.accent);
+  for (const c of document.querySelectorAll('[data-section]')) c.checked = !!st.sections[c.dataset.section];
 
   // display picker
   const sel = $('display');
@@ -109,6 +123,14 @@ function renderUpdate(u, packaged) {
       text.textContent = packaged ? 'Not checked yet.' : 'Updates work in the installed app.';
   }
 }
+
+// ------------------------------------------------------------------ appearance & panel sections
+const ACCENTS = { blue: '#0a84ff', violet: '#8b7cf6', pink: '#ff375f', orange: '#ff9f0a', green: '#30d158', teal: '#40c8e0', graphite: '#8e8e93' };
+$('accents').innerHTML = Object.entries(ACCENTS)
+  .map(([name, hex]) => `<button class="swatch" data-accent="${name}" style="--c:${hex}" title="${name[0].toUpperCase() + name.slice(1)}" aria-label="${name}"></button>`).join('');
+for (const b of document.querySelectorAll('.swatch')) b.addEventListener('click', () => set('accent', b.dataset.accent));
+for (const b of document.querySelectorAll('#sizeSeg button')) b.addEventListener('click', () => set('size', b.dataset.size));
+for (const c of document.querySelectorAll('[data-section]')) c.addEventListener('change', () => set('section', { name: c.dataset.section, on: c.checked }));
 
 // ------------------------------------------------------------------ general / display
 $('startWithWindows').addEventListener('change', (e) => set('startWithWindows', e.target.checked));

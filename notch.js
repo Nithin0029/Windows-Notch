@@ -14,6 +14,7 @@ const st = {
   view: 'main',       // which page of the open panel: 'main' | 'clip'
   weather: null,      // { temp, code, isDay, hi, lo, place, units } once a city is set in Settings
   keyOpened: false,   // the panel was opened with the keyboard shortcut (pointer may be elsewhere)
+  prefs: { size: 'normal', accent: 'blue', sections: { toggles: true, sliders: true, shelf: true, timers: true }, clipboard: true },
   expanded: false, toast: null, queue: [], hover: false,
 };
 const bootAt = Date.now();
@@ -119,7 +120,7 @@ function compactHTML() {
 }
 
 // ------------------------------------------------------------ shelf pieces
-const shelfBadge = () => (st.shelf.length ? `<span class="sbadge" title="Shelf">${ICON.tray}${st.shelf.length}</span>` : '');
+const shelfBadge = () => (st.shelf.length && st.prefs.sections.shelf ? `<span class="sbadge" title="Shelf">${ICON.tray}${st.shelf.length}</span>` : '');
 
 function shelfHTML() {
   if (!st.shelf.length) return '';
@@ -195,13 +196,21 @@ function expandedHTML() {
   } else {
     top = `<div class="clock"><div><div class="bigtime" id="e-time"></div><div class="date" id="e-date"></div>${weatherLine()}</div>${batteryRing()}</div>`;
   }
-  if (st.view === 'clip') return clipViewHTML();
-  const clipBtn = `<button class="chip clipbtn" data-act="view-clip" title="Clipboard history">${ICON.clip}${st.clips.length || ''}</button>` +
+  if (st.view === 'clip' && st.prefs.clipboard) return clipViewHTML();
+  const sec = st.prefs.sections;
+  // footer: timers (optional) on the left, clipboard (if history is on) and Settings on the right
+  const tools = (st.prefs.clipboard ? `<button class="chip clipbtn" data-act="view-clip" title="Clipboard history">${ICON.clip}${st.clips.length || ''}</button>` : '') +
     `<button class="chip iconbtn" data-act="settings" title="Settings">${ICON.gear}</button>`;
-  const trow = st.timer
-    ? `<div class="trow"><span class="tl">${ICON.timer}<span id="e-timer"></span> left</span><div class="chips"><button class="chip warn" data-act="cancel-timer">Cancel</button><span class="csep"></span>${clipBtn}</div></div>`
-    : `<div class="trow"><span class="tl" title="Timer">${ICON.timer}</span><div class="chips">${[1, 5, 15, 25].map((n) => `<button class="chip" data-timer="${n}" title="${n}-minute timer">${n}m</button>`).join('')}<span class="csep"></span>${clipBtn}</div></div>`;
-  return `<div class="exp">${top}${togglesHTML()}${slidersHTML()}${shelfHTML()}${trow}</div>`;
+  let trow;
+  if (st.timer) {
+    // a running timer always shows, even with the Timers section hidden, so it can be cancelled
+    trow = `<div class="trow"><span class="tl">${ICON.timer}<span id="e-timer"></span> left</span><div class="chips"><button class="chip warn" data-act="cancel-timer">Cancel</button><span class="csep"></span>${tools}</div></div>`;
+  } else if (sec.timers) {
+    trow = `<div class="trow"><span class="tl" title="Timer">${ICON.timer}</span><div class="chips">${[1, 5, 15, 25].map((n) => `<button class="chip" data-timer="${n}" title="${n}-minute timer">${n}m</button>`).join('')}<span class="csep"></span>${tools}</div></div>`;
+  } else {
+    trow = `<div class="trow"><span></span><div class="chips">${tools}</div></div>`;
+  }
+  return `<div class="exp">${top}${sec.toggles ? togglesHTML() : ''}${sec.sliders ? slidersHTML() : ''}${sec.shelf ? shelfHTML() : ''}${trow}</div>`;
 }
 
 // ------------------------------------------------------------ weather (city is chosen in Settings)
@@ -253,7 +262,7 @@ function render() {
   const key = [state, m && m.track, m && m.status, m && m.dur > 0, st.art && st.art.length, !!st.timer,
     b && b.charging, b && Math.round(b.level * 100), st.toast && st.toast.id, p.mic.length > 0, p.cam.length > 0,
     !!st.volume, st.brightness !== null, st.shelf.map((s) => s.path).join('|'),
-    st.view, JSON.stringify(st.toggles), st.clips.map((c) => c.id).join(','), JSON.stringify(st.weather)].join('|');
+    st.view, JSON.stringify(st.toggles), st.clips.map((c) => c.id).join(','), JSON.stringify(st.weather), JSON.stringify(st.prefs)].join('|');
   if (key !== lastKey) {
     lastKey = key;
     const layer = L[state];
@@ -268,7 +277,7 @@ function render() {
     if (state === 'compact') {
       w = (m || st.timer) ? 244 : 204;
       if (p.mic.length || p.cam.length) w += 18;
-      if (st.shelf.length) w += 44;
+      if (st.shelf.length && st.prefs.sections.shelf) w += 44;
       h = 34; r = 14;
     } else if (state === 'toast') {
       if (HUD_KINDS.has(st.toast.kind)) { w = 330; h = 34; r = 14; }
@@ -308,9 +317,10 @@ function watchPanelSize(el) {
 let shapeApplied = null;
 let shapeTimer = null;
 function shapeFor(w, h) {
+  const z = SIZE_SCALE[st.prefs.size] || 1;   // the notch is drawn scaled from its top centre
   const side = 10 + 8;                       // shoulder + margin
-  const W = w + side * 2;
-  return { x: Math.round((window.innerWidth - W) / 2), y: 0, width: Math.round(W), height: Math.round(h + 8) };
+  const W = (w + side * 2) * z;
+  return { x: Math.round((window.innerWidth - W) / 2), y: 0, width: Math.round(W), height: Math.round((h + 8) * z) };
 }
 function updateShape(w, h) {
   const target = shapeFor(w, h);
@@ -475,6 +485,20 @@ function scheduleCollapse() {
 }
 // The main process watches the real pointer position. It's the source of truth for "the pointer
 // left the notch", so an open panel always closes when you move away, whatever the hover state says.
+// ------------------------------------------------------------ appearance (Settings → Appearance)
+const SIZE_SCALE = { compact: 0.88, normal: 1, large: 1.12 };
+const ACCENT_COLORS = { blue: '#0a84ff', violet: '#8b7cf6', pink: '#ff375f', orange: '#ff9f0a', green: '#30d158', teal: '#40c8e0', graphite: '#8e8e93' };
+api.onPrefs((p) => {
+  if (!p) return;
+  st.prefs = { ...st.prefs, ...p, sections: { ...st.prefs.sections, ...(p.sections || {}) } };
+  const root = document.documentElement.style;
+  root.setProperty('--z', String(SIZE_SCALE[st.prefs.size] || 1));
+  root.setProperty('--brand', ACCENT_COLORS[st.prefs.accent] || ACCENT_COLORS.blue);
+  if (!st.prefs.clipboard && st.view === 'clip') st.view = 'main';
+  lastKey = '';            // force a full redraw + re-measure with the new size
+  render();
+});
+
 // Keyboard shortcut (set in Settings): open/close the panel on this screen.
 api.onCommand((cmd) => {
   if (cmd !== 'toggle-panel') return;
@@ -596,7 +620,7 @@ function endDrop() { clearTimeout(dropTimer); if (st.dropping) { console.info('[
 // Windows stops sending dragover while the pointer is held still, so silence must NOT close the
 // drop zone. It closes only on a real "left the window" dragleave (or after the drop itself).
 function dragOver(e) {
-  if (!hasFiles(e)) return;
+  if (!hasFiles(e) || !st.prefs.sections.shelf) return;   // Shelf hidden in Settings: don't accept drops
   e.preventDefault();
   clearTimeout(dropTimer);
   if (draggingOut) { e.dataTransfer.dropEffect = 'none'; return; }

@@ -30,6 +30,10 @@ A MacBook-style **notch** for Windows. It sits at the top centre of your screen,
 - **Keyboard shortcut:** **Ctrl + Alt + N** opens the panel on the screen your mouse is on. You can change it in Settings.
 - **Multiple monitors:** show the notch on your main screen, on every screen, or on one you choose. A fullscreen app hides only its own screen's notch.
 - **Auto-update:** new versions download in the background from GitHub Releases and install the next time the app quits.
+- **Make it yours:**
+  - three notch sizes (Compact, Normal, Large)
+  - seven accent colours
+  - choose which panel sections appear: quick toggles, sliders, Shelf, timers
 - **Panel (click the notch; move the pointer away or click the notch again to close it):**
   - media controls with a progress bar, or a big clock, the date, the weather and a battery ring when nothing is playing
   - quick toggles
@@ -47,9 +51,13 @@ Open Settings in any of these ways:
 
 ![Windows Notch Settings window](docs/settings.png)
 
+<img src="docs/appearance.png" width="420" alt="Appearance and panel section options in Settings">
+
 | Section | Options |
 |---|---|
 | **General** | Start with Windows, use the notch for volume keys, clipboard history |
+| **Appearance** | Notch size (Compact / Normal / Large), accent colour |
+| **Panel sections** | Show or hide quick toggles, volume & brightness sliders, File Shelf, quick timers |
 | **Display** | Main display, all displays, or a specific display |
 | **Keyboard shortcut** | On/off, plus a recorder to choose your own keys |
 | **Weather** | On/off, city search, °C / °F |
@@ -135,6 +143,7 @@ It sends JSON lines to the main process, and has no extra dependencies to instal
 - [x] Keyboard shortcut
 - [x] Weather
 - [x] Auto-update from GitHub Releases
+- [x] Personalization: size, accent colour, panel sections
 - [ ] Do Not Disturb / Focus toggle (Windows has no public API for it yet)
 - [ ] Calendar: "next meeting in 5 min"
 

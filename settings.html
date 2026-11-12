@@ -85,6 +85,14 @@
   .seg button { border: none; border-radius: 0; height: 30px; background: var(--card-2); min-width: 46px; }
   .seg button.on { background: var(--accent); color: #fff; }
 
+  /* accent swatches */
+  .swatches { display: flex; gap: 8px; }
+  .swatch { width: 26px; height: 26px; padding: 0; border-radius: 50%; border: 2px solid transparent; position: relative; }
+  .swatch::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--c); }
+  .swatch:hover { border-color: rgba(255, 255, 255, .35); background: none; }
+  .swatch.on { border-color: #fff; }
+  .seg button[data-size] { min-width: 76px; }
+
   /* updates */
   .status { display: flex; align-items: center; gap: 8px; font-size: 13px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex-shrink: 0; }
@@ -119,6 +127,44 @@
         <div class="ico" data-icon="clip"></div>
         <div class="text"><div class="title">Clipboard history</div><div class="desc">Keeps your last 15 copied texts in the panel. Memory only — never saved to disk; passwords are skipped.</div></div>
         <label class="switch"><input type="checkbox" id="clipboard"><span></span></label>
+      </div>
+    </div>
+
+    <h2>Appearance</h2>
+    <div class="card">
+      <div class="row">
+        <div class="ico" data-icon="size"></div>
+        <div class="text"><div class="title">Notch size</div><div class="desc">How big the notch and its panel are drawn.</div></div>
+        <div class="seg" id="sizeSeg"><button data-size="compact">Compact</button><button data-size="normal">Normal</button><button data-size="large">Large</button></div>
+      </div>
+      <div class="row">
+        <div class="ico" data-icon="palette"></div>
+        <div class="text"><div class="title">Accent colour</div><div class="desc">Used for the quick toggles, the Shelf and this window.</div></div>
+        <div class="swatches" id="accents"></div>
+      </div>
+    </div>
+
+    <h2>Panel sections</h2>
+    <div class="card">
+      <div class="row">
+        <div class="ico" data-icon="toggles"></div>
+        <div class="text"><div class="title">Quick toggles</div><div class="desc">Wi‑Fi, Bluetooth, microphone and dark mode buttons.</div></div>
+        <label class="switch"><input type="checkbox" data-section="toggles"><span></span></label>
+      </div>
+      <div class="row">
+        <div class="ico" data-icon="sliders"></div>
+        <div class="text"><div class="title">Volume &amp; brightness sliders</div></div>
+        <label class="switch"><input type="checkbox" data-section="sliders"><span></span></label>
+      </div>
+      <div class="row">
+        <div class="ico" data-icon="shelf"></div>
+        <div class="text"><div class="title">File Shelf</div><div class="desc">When off, files can't be dropped on the notch (your saved files stay).</div></div>
+        <label class="switch"><input type="checkbox" data-section="shelf"><span></span></label>
+      </div>
+      <div class="row">
+        <div class="ico" data-icon="timer"></div>
+        <div class="text"><div class="title">Quick timers</div><div class="desc">The 1, 5, 15 and 25 minute buttons.</div></div>
+        <label class="switch"><input type="checkbox" data-section="timers"><span></span></label>
       </div>
     </div>
 
