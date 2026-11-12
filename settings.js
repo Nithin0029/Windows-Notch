@@ -17,6 +17,10 @@ const ICONS = {
   shelf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.5l2.6-7.2c.3-.8 1-1.3 1.9-1.3h9c.9 0 1.6.5 1.9 1.3l2.6 7.2V18c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2z"/><path d="M3 13.5h5l1.5 2.5h5l1.5-2.5h5"/></svg>',
   timer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="12" cy="13.5" r="8"/><path d="M12 9.5v4l2.5 2M9.5 2.5h5"/></svg>',
   update: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4.5h-4.5"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 1.8 4.4 13.4c-.3.4 0 1 .5 1h5.6l-1.2 7.4c-.1.6.7.9 1 .4l9.3-11.7c.3-.4 0-1-.5-1h-5.6l1.2-7.3c.1-.6-.7-.9-1.1-.4z"/></svg>',
+  style: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="4" width="19" height="16" rx="3"/><rect x="8" y="7" width="8" height="3.2" rx="1.6" fill="currentColor" stroke="none"/></svg>',
+  opacity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor" stroke="none"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
 };
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = ICONS[el.dataset.icon] || '';
 
@@ -34,8 +38,12 @@ function render(s) {
   $('startWithWindows').checked = s.startWithWindows;
   $('volumeKeys').checked = st.volumeKeys;
   $('clipboard').checked = st.clipboard;
+  $('chargingAnimation').checked = st.chargingAnimation;
 
   // appearance (the Settings window itself follows the accent colour too)
+  for (const b of document.querySelectorAll('#styleSeg button')) b.classList.toggle('on', b.dataset.style === st.appearance.style);
+  if (document.activeElement !== $('opacity')) $('opacity').value = st.appearance.opacity;
+  showOpacity($('opacity').value);
   const accentHex = ACCENTS[st.appearance.accent] || ACCENTS.blue;
   document.documentElement.style.setProperty('--accent', accentHex);
   document.documentElement.style.setProperty('--accent-2', `color-mix(in srgb, ${accentHex} 72%, white)`);
@@ -85,6 +93,9 @@ function render(s) {
     $('wxPreview').classList.add('hidden');
   }
 
+  // calendar
+  renderCalendar(s);
+
   // updates
   $('autoUpdate').checked = st.autoUpdate;
   renderUpdate(s.update, s.packaged);
@@ -132,7 +143,69 @@ for (const b of document.querySelectorAll('.swatch')) b.addEventListener('click'
 for (const b of document.querySelectorAll('#sizeSeg button')) b.addEventListener('click', () => set('size', b.dataset.size));
 for (const c of document.querySelectorAll('[data-section]')) c.addEventListener('change', () => set('section', { name: c.dataset.section, on: c.checked }));
 
+for (const b of document.querySelectorAll('#styleSeg button')) b.addEventListener('click', () => set('style', b.dataset.style));
+function showOpacity(v) {
+  $('opacityVal').textContent = `${v}%`;
+  $('opacity').style.setProperty('--p', `${((v - 40) / 60) * 100}%`);
+}
+// the notch follows the slider live while you drag it
+let opacityTimer = null;
+$('opacity').addEventListener('input', (e) => {
+  showOpacity(e.target.value);
+  clearTimeout(opacityTimer);
+  opacityTimer = setTimeout(() => set('opacity', Number(e.target.value)), 40);
+});
+
+// ------------------------------------------------------------------ calendar
+function renderCalendar(s) {
+  const c = s.settings.calendar, info = s.calendar;
+  $('calendarEnabled').checked = c.enabled;
+  $('calRow').classList.toggle('hidden', !c.enabled);
+  $('leadRow').classList.toggle('hidden', !c.enabled || !c.urls.length);
+  $('calLead').value = String(c.lead);
+  $('calList').innerHTML = info.sources.map((src) => {
+    let status, dot;
+    if (src.ok === null) { status = 'Loading…'; dot = 'busy'; }
+    else if (src.ok) { status = `${src.count} event${src.count === 1 ? '' : 's'} in the next day and a half · updated ${timeAgo(src.at)}`; dot = 'ok'; }
+    else { status = `<span class="bad">${escapeHtml(src.error)}</span>`; dot = 'err'; }
+    return `<div class="calsrc"><i class="dot ${dot}"></i><div class="n"><b>${escapeHtml(src.name || src.host)}</b><span>${src.ok === false ? status : escapeHtml(status)}</span></div>` +
+      `<button class="link" data-remove="${escapeHtml(src.url)}">Remove</button></div>`;
+  }).join('');
+  const n = info.next;
+  const pv = $('calPreview');
+  if (c.enabled && n) {
+    const d = new Date(n.start);
+    const when = n.start <= Date.now() ? `Now · until ${hm(n.end)}` : `${sameDay(n.start, Date.now()) ? 'Today' : d.toLocaleDateString([], { weekday: 'long' })} · ${hm(n.start)} – ${hm(n.end)}`;
+    pv.innerHTML = `<div class="calic"><b>${d.toLocaleDateString([], { month: 'short' }).replace('.', '')}</b><span>${d.getDate()}</span></div>` +
+      `<div><div style="font-weight:600">Next: ${escapeHtml(n.title)}</div><div class="m">${escapeHtml(when)}${n.link ? ' · has a Join link' : ''}</div></div>`;
+    pv.classList.remove('hidden');
+  } else if (c.enabled && info.sources.some((x) => x.ok)) {
+    pv.innerHTML = '<div class="m">No meetings in the next 24 hours.</div>';
+    pv.classList.remove('hidden');
+  } else pv.classList.add('hidden');
+}
+const hm = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+
+async function addCalendar() {
+  const v = $('calInput').value.trim();
+  if (!v) return;
+  $('calAdd').disabled = true;
+  const err = await set('calendarAdd', v);
+  $('calAdd').disabled = false;
+  $('calError').classList.toggle('hidden', !err);
+  if (err) { $('calError').textContent = err; return; }
+  $('calInput').value = '';
+}
+$('calAdd').addEventListener('click', addCalendar);
+$('calInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') addCalendar(); });
+$('calInput').addEventListener('input', () => $('calError').classList.add('hidden'));
+$('calList').addEventListener('click', (e) => { const b = e.target.closest('[data-remove]'); if (b) set('calendarRemove', b.dataset.remove); });
+$('calendarEnabled').addEventListener('change', (e) => set('calendarEnabled', e.target.checked));
+$('calLead').addEventListener('change', (e) => set('calendarLead', Number(e.target.value)));
+
 // ------------------------------------------------------------------ general / display
+$('chargingAnimation').addEventListener('change', (e) => set('chargingAnimation', e.target.checked));
 $('startWithWindows').addEventListener('change', (e) => set('startWithWindows', e.target.checked));
 $('volumeKeys').addEventListener('change', (e) => set('volumeKeys', e.target.checked));
 $('clipboard').addEventListener('change', (e) => set('clipboard', e.target.checked));
@@ -273,4 +346,4 @@ function timeAgo(t) {
 }
 settingsApi.onState((s) => render(s));
 settingsApi.get().then(render);
-setInterval(() => { if (state) renderUpdate(state.update, state.packaged); }, 30000);   // keep "checked x min ago" fresh
+setInterval(() => { if (state) { renderUpdate(state.update, state.packaged); renderCalendar(state); } }, 30000);   // keep "x min ago" fresh

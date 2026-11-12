@@ -14,9 +14,14 @@ const st = {
   view: 'main',       // which page of the open panel: 'main' | 'clip'
   weather: null,      // { temp, code, isDay, hi, lo, place, units } once a city is set in Settings
   keyOpened: false,   // the panel was opened with the keyboard shortcut (pointer may be elsewhere)
-  prefs: { size: 'normal', accent: 'blue', sections: { toggles: true, sliders: true, shelf: true, timers: true }, clipboard: true },
+  prefs: { size: 'normal', accent: 'blue', style: 'notch', opacity: 100, charging: true, calendarLead: 5, clipboard: true,
+    sections: { toggles: true, sliders: true, shelf: true, timers: true, calendar: true } },
+  cal: [],            // upcoming calendar events: [{ id, title, start, end, allDay, location, link }]
   expanded: false, toast: null, queue: [], hover: false,
 };
+const ISLAND_GAP = 7;      // px between the top of the screen and the island
+const island = () => st.prefs.style === 'island';
+const gapPx = () => (island() ? ISLAND_GAP : 0);
 const bootAt = Date.now();
 const HUD_KINDS = new Set(['volume', 'brightness']);
 let lastKey = '';
@@ -47,6 +52,8 @@ const ICON = {
   download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg>',
   back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>',
   file: '<svg viewBox="0 0 24 24"><path d="M6 2.5h8l5 5V20c0 .8-.7 1.5-1.5 1.5h-11.5c-.8 0-1.5-.7-1.5-1.5V4c0-.8.7-1.5 1.5-1.5z" fill="#e9e9ee"/><path d="M14 2.5v4c0 .6.4 1 1 1h4" fill="#b9b9c2"/></svg>',
+  boltSolid: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.6 1.8 4.4 13.4c-.3.4 0 1 .5 1h5.6l-1.2 7.4c-.1.6.7.9 1 .4l9.3-11.7c.3-.4 0-1-.5-1h-5.6l1.2-7.3c.1-.6-.7-.9-1.1-.4z"/></svg>',
+  cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
 };
 function speaker(level, muted) {
   const waves = muted ? '<path d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
@@ -112,7 +119,9 @@ function privacyDots() {
 function compactHTML() {
   const left = st.media ? art('sm') : `<span class="ctime" id="c-time"></span>`;
   let right;
+  const soon = soonEvent(Date.now());
   if (st.timer) right = `<span class="ctimer">${timerRing()}<span id="c-timer"></span></span>`;
+  else if (soon) right = `<span class="ccal" title="${esc(soon.title)}">${ICON.cal}<span id="c-cal"></span></span>`;
   else if (playing()) right = wave();
   else if (st.media) right = `<span class="ctime" id="c-time"></span>`;
   else right = st.battery ? batteryChip() : `<span class="ctime" id="c-date" style="opacity:.6;font-weight:500"></span>`;
@@ -141,10 +150,21 @@ function hudHTML(kind) {
   return `<div class="hud" id="hud" data-kind="${kind}"><span class="hicon" id="h-icon"></span><div class="hbar"><i id="h-bar"></i></div><span class="hval" id="h-val"></span></div>`;
 }
 
+function chargingHTML(full) {
+  const lvl = st.battery ? st.battery.level : 1;
+  return `<div class="chg${full ? ' full' : ''}"><span class="cl">${ICON.boltSolid}${full ? 'Fully charged' : 'Charging'}</span>` +
+    `<span class="cr">${Math.round(lvl * 100)}%<span class="bigbat" style="--lvl:${lvl.toFixed(3)}"><i class="shell"></i><i class="cap"></i><i class="fill"></i></span></span></div>`;
+}
+
 function toastHTML(t) {
   if (HUD_KINDS.has(t.kind)) return hudHTML(t.kind);
+  if (t.kind === 'charging') return chargingHTML(t.full);
   let icon = '', title = esc(t.title), sub = esc(t.sub || ''), right = '';
   switch (t.kind) {
+    case 'cal':
+      icon = calIcon(t.ev.start);
+      right = t.ev.link ? `<button class="join" data-act="join" data-link="${esc(t.ev.link)}">Join</button>` : '';
+      break;
     case 'track':
       icon = art('lg');
       right = wave();
@@ -210,7 +230,7 @@ function expandedHTML() {
   } else {
     trow = `<div class="trow"><span></span><div class="chips">${tools}</div></div>`;
   }
-  return `<div class="exp">${top}${sec.toggles ? togglesHTML() : ''}${sec.sliders ? slidersHTML() : ''}${sec.shelf ? shelfHTML() : ''}${trow}</div>`;
+  return `<div class="exp">${top}${sec.calendar ? calendarHTML() : ''}${sec.toggles ? togglesHTML() : ''}${sec.sliders ? slidersHTML() : ''}${sec.shelf ? shelfHTML() : ''}${trow}</div>`;
 }
 
 // ------------------------------------------------------------ weather (city is chosen in Settings)
@@ -221,6 +241,64 @@ function weatherLine() {
   return `<div class="wxl" title="${esc(WeatherIcons.label(w.code))} in ${esc(w.place || '')}">${WeatherIcons.icon(w.code, w.isDay)}` +
     `<b>${w.temp}°</b><span>${esc(w.place || WeatherIcons.label(w.code))}${hl}</span></div>`;
 }
+
+// ------------------------------------------------------------ calendar (links are added in Settings)
+const hm = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
+const timedEvents = () => st.cal.filter((e) => !e.allDay);
+/** The meeting in progress, or else the next one in the coming 24 hours. */
+const nextEvent = (now) => timedEvents().find((e) => e.end > now && e.start < now + 24 * 3600e3) || null;
+/** A meeting about to start (within the reminder time) or that started in the last 5 minutes. */
+function soonEvent(now) {
+  const lead = (st.prefs.calendarLead || 5) * 60000;
+  return timedEvents().find((e) => now >= e.start - lead && now < Math.min(e.end, e.start + 5 * 60000)) || null;
+}
+function calIcon(ms) {
+  const d = new Date(ms);
+  return `<div class="calic"><b>${d.toLocaleDateString([], { month: 'short' }).replace('.', '')}</b><span>${d.getDate()}</span></div>`;
+}
+function calWhen(e, now) {
+  if (now >= e.start) return `<span class="now">Now</span> · until ${hm(e.end)}`;
+  const mins = Math.ceil((e.start - now) / 60000);
+  if (mins <= 60) return `<span class="soon">in ${mins} min</span> · ${hm(e.start)}`;
+  if (sameDay(e.start, now)) return `${hm(e.start)} – ${hm(e.end)}`;
+  return `Tomorrow · ${hm(e.start)}`;
+}
+function calMore(e, now) {
+  const n = timedEvents().filter((x) => x !== e && x.start > now && sameDay(x.start, now)).length;
+  return n ? ` · +${n} more today` : '';
+}
+function calendarHTML() {
+  const now = Date.now(), e = nextEvent(now);
+  if (!e) return '';
+  return `<div class="cal" title="${esc(e.title)}${e.location ? '&#10;' + esc(e.location) : ''}">${calIcon(e.start)}` +
+    `<div class="calt"><div class="t">${esc(e.title)}</div><div class="s" id="e-cal">${calWhen(e, now)}${calMore(e, now)}</div></div>` +
+    (e.link ? `<button class="join" data-act="join" data-link="${esc(e.link)}" title="Join the meeting">Join</button>` : '') + `</div>`;
+}
+const calAlerted = new Set();
+/** Remind before a meeting (Settings → Calendar → Remind me) and again as it starts. */
+function checkCalendar() {
+  const now = Date.now(), lead = (st.prefs.calendarLead || 5) * 60000;
+  for (const e of timedEvents()) {
+    if (now >= e.start && now < e.start + 60000) {
+      if (calAlerted.has(e.id + ':start')) continue;
+      calAlerted.add(e.id + ':start'); calAlerted.add(e.id + ':pre');
+      showToast({ kind: 'cal', ev: e, title: e.title, sub: `Starting now · until ${hm(e.end)}`, important: true, duration: 10000 });
+    } else if (now >= e.start - lead && now < e.start) {
+      if (calAlerted.has(e.id + ':pre')) continue;
+      calAlerted.add(e.id + ':pre');
+      const mins = Math.ceil((e.start - now) / 60000);
+      chime();
+      showToast({ kind: 'cal', ev: e, title: e.title, sub: `In ${mins} min · ${hm(e.start)}${e.location && !e.link ? ' · ' + e.location : ''}`, important: true, duration: 10000 });
+    }
+  }
+}
+/** Changes when what the calendar shows changes (next meeting, countdown on/off), so the notch redraws. */
+function calKey() {
+  const now = Date.now(), n = nextEvent(now), s = soonEvent(now);
+  return `${n ? n.id + n.title + n.link : ''}|${s ? s.id : ''}|${n ? calMore(n, now) : ''}`;
+}
+let lastCalKey = '';
 
 // ------------------------------------------------------------ quick toggles
 function togglesHTML() {
@@ -262,7 +340,8 @@ function render() {
   const key = [state, m && m.track, m && m.status, m && m.dur > 0, st.art && st.art.length, !!st.timer,
     b && b.charging, b && Math.round(b.level * 100), st.toast && st.toast.id, p.mic.length > 0, p.cam.length > 0,
     !!st.volume, st.brightness !== null, st.shelf.map((s) => s.path).join('|'),
-    st.view, JSON.stringify(st.toggles), st.clips.map((c) => c.id).join(','), JSON.stringify(st.weather), JSON.stringify(st.prefs)].join('|');
+    st.view, JSON.stringify(st.toggles), st.clips.map((c) => c.id).join(','), JSON.stringify(st.weather), JSON.stringify(st.prefs),
+    (lastCalKey = calKey())].join('|');
   if (key !== lastKey) {
     lastKey = key;
     const layer = L[state];
@@ -274,19 +353,22 @@ function render() {
     for (const k in L) L[k].classList.toggle('on', k === state);
     fillText();   // put the clock/date/timer text in BEFORE measuring, or empty lines measure as 0px tall
     let w, h, r;
+    const isl = island();
     if (state === 'compact') {
-      w = (m || st.timer) ? 244 : 204;
+      w = (m || st.timer || soonEvent(Date.now())) ? 244 : 204;
       if (p.mic.length || p.cam.length) w += 18;
       if (st.shelf.length && st.prefs.sections.shelf) w += 44;
-      h = 34; r = 14;
+      h = 34; r = isl ? 17 : 14;
     } else if (state === 'toast') {
-      if (HUD_KINDS.has(st.toast.kind)) { w = 330; h = 34; r = 14; }
-      else { w = 360; h = 60; r = 22; }
+      if (HUD_KINDS.has(st.toast.kind)) { w = 330; h = 34; r = isl ? 17 : 14; }
+      else if (st.toast.kind === 'charging') { w = 300; h = 38; r = isl ? 19 : 16; }
+      else { w = 360; h = 60; r = isl ? 30 : 22; }
     } else if (state === 'drop') { w = 400; h = 100; r = 28; }
     else { w = 400; h = layer.firstElementChild.offsetHeight; r = 30; }
     notch.style.width = w + 'px';
     notch.style.height = h + 'px';
-    document.getElementById('body').style.borderRadius = `0 0 ${r}px ${r}px`;
+    // the notch hangs from the top edge (square top corners); the island is rounded all round
+    document.getElementById('body').style.borderRadius = isl ? `${r}px` : `0 0 ${r}px ${r}px`;
     notch.dataset.state = state;
     notch.classList.toggle('lift', state === 'compact' && st.hover);
     updateShape(w, h);
@@ -320,7 +402,12 @@ function shapeFor(w, h) {
   const z = SIZE_SCALE[st.prefs.size] || 1;   // the notch is drawn scaled from its top centre
   const side = 10 + 8;                       // shoulder + margin
   const W = (w + side * 2) * z;
-  return { x: Math.round((window.innerWidth - W) / 2), y: 0, width: Math.round(W), height: Math.round((h + 8) * z) };
+  // Room below for the hover lift, and for the open panel's shadow (the window is cut to this shape,
+  // so anything outside it, shadow included, simply isn't drawn).
+  const below = notch.dataset.state === 'expanded' ? 26 : 8;
+  // The island floats a few px below the edge; that strip stays part of the shape, so flicking the
+  // pointer to the very top of the screen still lands on it.
+  return { x: Math.round((window.innerWidth - W) / 2), y: 0, width: Math.round(W), height: Math.round(gapPx() + (h + below) * z) };
 }
 function updateShape(w, h) {
   const target = shapeFor(w, h);
@@ -328,7 +415,7 @@ function updateShape(w, h) {
   const now = a ? {
     x: Math.min(a.x, target.x), y: 0,
     width: Math.max(a.x + a.width, target.x + target.width) - Math.min(a.x, target.x),
-    height: Math.max(a.height, target.height),
+    height: Math.max(a.y + a.height, target.y + target.height),
   } : target;
   api.setShape(now);
   shapeApplied = now;
@@ -373,6 +460,10 @@ function updateLevels() {
 
 function tick() {
   if (st.timer && st.timer.end <= Date.now()) { finishTimer(); return; }
+  if (st.cal.length) {
+    checkCalendar();
+    if (calKey() !== lastCalKey) { render(); return; }   // a meeting started/ended or its countdown began
+  }
   fillText();
 }
 
@@ -389,6 +480,13 @@ function fillText() {
     setText('e-timer', fmt(Math.ceil(left)));
     const ring = document.getElementById('ring-fg');
     if (ring) ring.setAttribute('stroke-dasharray', `${(50.3 * left / st.timer.total).toFixed(2)} 50.3`);
+  }
+  if (st.cal.length) {
+    const now = Date.now();
+    const s = soonEvent(now);
+    if (s) setText('c-cal', now >= s.start ? 'now' : `${Math.ceil((s.start - now) / 60000)}m`);
+    const n = nextEvent(now);
+    if (n) setHTML('e-cal', calWhen(n, now) + calMore(n, now));
   }
   if (st.media && st.media.dur > 0) {
     const pos = mediaPos();
@@ -494,6 +592,11 @@ api.onPrefs((p) => {
   const root = document.documentElement.style;
   root.setProperty('--z', String(SIZE_SCALE[st.prefs.size] || 1));
   root.setProperty('--brand', ACCENT_COLORS[st.prefs.accent] || ACCENT_COLORS.blue);
+  const opacity = Math.max(40, Math.min(100, Number(st.prefs.opacity) || 100));
+  root.setProperty('--alpha', String(opacity / 100));
+  root.setProperty('--gap', gapPx() + 'px');
+  document.documentElement.classList.toggle('island', island());
+  document.documentElement.classList.toggle('glass', opacity < 100);
   if (!st.prefs.clipboard && st.view === 'clip') st.view = 'main';
   lastKey = '';            // force a full redraw + re-measure with the new size
   render();
@@ -571,6 +674,12 @@ document.addEventListener('click', (e) => {
     if (act === 'cancel-timer') { st.timer = null; render(); return; }
     if (btn.dataset.toggle) { flipToggle(btn.dataset.toggle); return; }
     if (act === 'settings') { api.openSettings(); st.expanded = false; render(); return; }
+    if (act === 'join') {
+      api.openLink(btn.dataset.link);
+      st.expanded = false;
+      if (st.toast && st.toast.kind === 'cal') { clearTimeout(toastTimer); nextToast(); } else render();
+      return;
+    }
     if (act === 'view-clip') { st.view = 'clip'; render(); return; }
     if (act === 'view-main') { st.view = 'main'; render(); return; }
     if (act === 'clip-clear') { api.clipClear(); return; }
@@ -593,7 +702,7 @@ document.addEventListener('click', (e) => {
   }
   // Inside the open panel, only the top strip (where the notch sits) closes it; clicking the clock,
   // the date or empty space does nothing. Moving the pointer away also closes it.
-  if (st.expanded && e.clientY > 40) return;
+  if (st.expanded && e.clientY > 40 + gapPx()) return;
   if (st.toast) { clearTimeout(toastTimer); st.toast = null; st.queue = []; }
   st.expanded = !st.expanded;
   clearTimeout(collapseTimer);
@@ -635,7 +744,7 @@ document.addEventListener('dragleave', (e) => {
   // the shrunken notch). Only a pointer that is really outside the notch's area counts as leaving.
   const a = shapeApplied;
   const x = e.clientX, y = e.clientY;
-  const inside = a && !(x === 0 && y === 0) && x > a.x + 1 && x < a.x + a.width - 1 && y >= 0 && y < a.height - 1;
+  const inside = a && !(x === 0 && y === 0) && x > a.x + 1 && x < a.x + a.width - 1 && y >= a.y && y < a.y + a.height - 1;
   if (inside) return;
   clearTimeout(dropTimer);
   dropTimer = setTimeout(endDrop, 120);
@@ -707,6 +816,9 @@ api.onSystem((m) => {
     st.brightness = m.level;
     if (dragging) return;
     if (changed) showHud('brightness'); else render();
+  } else if (m.type === 'calendar') {
+    st.cal = Array.isArray(m.events) ? m.events : [];
+    render();
   } else if (m.type === 'weather') {
     st.weather = m.off ? null : m;
     render();
@@ -762,6 +874,7 @@ function rgbToHsl(r, g, b) {
 // can't tell a desktop apart from a laptop that is plugged in at 100%.
 let hasBattery = null;
 let batteryRef = null;
+let fullShown = false;     // "Fully charged" shows once per time the charger is plugged in
 if (navigator.getBattery) {
   navigator.getBattery().then((b) => {
     batteryRef = b;
@@ -772,14 +885,24 @@ if (navigator.getBattery) {
     b.addEventListener('chargingchange', () => {
       if (isDesktop()) return;
       st.battery = read();
-      showToast(b.charging
-        ? { kind: 'battery', title: 'Charging', color: '#30d158' }
-        : { kind: 'battery', title: 'On Battery', sub: 'Power adapter disconnected' });
+      if (b.charging) {
+        fullShown = b.level >= 1;
+        // the charging animation (Settings → General), or the plain alert when it's turned off
+        showToast(st.prefs.charging ? { kind: 'charging', full: b.level >= 1, duration: 3800 } : { kind: 'battery', title: 'Charging', color: '#30d158' });
+      } else {
+        fullShown = false;
+        showToast({ kind: 'battery', title: 'On Battery', sub: 'Power adapter disconnected' });
+      }
       render();
     });
     b.addEventListener('levelchange', () => {
       if (isDesktop()) return;
       st.battery = read();
+      if (b.charging && b.level >= 1 && !fullShown) {
+        fullShown = true;
+        if (st.prefs.charging) showToast({ kind: 'charging', full: true, duration: 3200 });
+        else showToast({ kind: 'battery', title: 'Fully charged', sub: 'You can unplug the charger', color: '#30d158' });
+      }
       if (!b.charging && b.level <= 0.2 && !lowWarned) { lowWarned = true; showToast({ kind: 'battery', title: 'Low Battery', sub: 'Plug in soon', color: '#ff453a', important: true }); }
       if (b.charging || b.level > 0.25) lowWarned = false;
       render();

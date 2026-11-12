@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   shelfDrag: (p) => ipcRenderer.send('shelf:drag', p),
   toggle: (what) => ipcRenderer.send('notch:toggle', what),            // 'wifi' | 'bt' | 'mic' | 'dark'
   openSettings: () => ipcRenderer.send('notch:open-settings'),
+  openLink: (url) => ipcRenderer.send('notch:open-link', url),         // "Join" a meeting (main checks it's a calendar meeting link)
   onPrefs: (cb) => ipcRenderer.on('notch:prefs', (_e, prefs) => cb(prefs)),   // size, accent, visible sections
   onCommand: (cb) => ipcRenderer.on('notch:command', (_e, cmd) => cb(cmd)),   // e.g. 'toggle-panel' from the keyboard shortcut
   clipCopy: (id) => ipcRenderer.send('clip:copy', id),

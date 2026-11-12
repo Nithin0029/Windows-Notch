@@ -93,6 +93,35 @@
   .swatch.on { border-color: #fff; }
   .seg button[data-size] { min-width: 76px; }
 
+  /* style picker + transparency slider */
+  .styleseg button { display: inline-flex; align-items: center; gap: 6px; min-width: 92px; justify-content: center; }
+  .styleseg svg { width: 26px; height: 12px; opacity: .85; }
+  .range { display: flex; align-items: center; gap: 10px; }
+  .range span { width: 40px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+  input[type="range"] { -webkit-appearance: none; appearance: none; width: 170px; height: 4px; border-radius: 2px; outline: none; cursor: pointer;
+    background: linear-gradient(to right, var(--accent) var(--p, 100%), #3a3a46 var(--p, 100%)); }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: none;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
+  input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+
+  /* calendar */
+  .addcal { display: flex; gap: 8px; margin-top: 8px; }
+  .addcal input { flex: 1; min-width: 0; }
+  .addcal button { height: 34px; }
+  .calsrc { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; background: var(--card-2); margin-top: 8px; }
+  .calsrc .n { flex: 1; min-width: 0; }
+  .calsrc .n b { font-weight: 500; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .calsrc .n span { font-size: 12px; color: var(--muted); }
+  .calsrc .n span.bad { color: var(--err); }
+  .calsrc .dot { margin-left: 2px; }
+  details.help { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+  details.help summary { cursor: pointer; color: var(--accent-2); width: fit-content; }
+  details.help ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; }
+  details.help b { color: var(--text); font-weight: 600; }
+  .calic { width: 34px; height: 36px; border-radius: 8px; background: #2c2c37; overflow: hidden; text-align: center; flex-shrink: 0; }
+  .calic b { display: block; height: 12px; background: var(--accent); color: #fff; font-size: 8px; line-height: 12px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; }
+  .calic span { display: block; font-size: 16px; line-height: 23px; font-weight: 600; }
+
   /* updates */
   .status { display: flex; align-items: center; gap: 8px; font-size: 13px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex-shrink: 0; }
@@ -128,10 +157,28 @@
         <div class="text"><div class="title">Clipboard history</div><div class="desc">Keeps your last 15 copied texts in the panel. Memory only — never saved to disk; passwords are skipped.</div></div>
         <label class="switch"><input type="checkbox" id="clipboard"><span></span></label>
       </div>
+      <div class="row">
+        <div class="ico" data-icon="bolt"></div>
+        <div class="text"><div class="title">Charging animation</div><div class="desc">When you plug in the charger, the notch lights up and fills its battery. Off shows a simple alert instead.</div></div>
+        <label class="switch"><input type="checkbox" id="chargingAnimation"><span></span></label>
+      </div>
     </div>
 
     <h2>Appearance</h2>
     <div class="card">
+      <div class="row">
+        <div class="ico" data-icon="style"></div>
+        <div class="text"><div class="title">Style</div><div class="desc">A notch that hangs from the top edge, or a floating island just below it.</div></div>
+        <div class="seg styleseg" id="styleSeg">
+          <button data-style="notch"><svg viewBox="0 0 36 16"><path d="M4 0h28v0c-2 0-3 1-3 3v5a6 6 0 0 1-6 6H13a6 6 0 0 1-6-6V3C7 1 6 0 4 0z" fill="currentColor"/></svg>Notch</button>
+          <button data-style="island"><svg viewBox="0 0 36 16"><rect x="6" y="3.5" width="24" height="10" rx="5" fill="currentColor"/></svg>Island</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="ico" data-icon="opacity"></div>
+        <div class="text"><div class="title">Transparency</div><div class="desc">Let your wallpaper show through the background. Text stays fully visible.</div></div>
+        <div class="range"><input type="range" id="opacity" min="40" max="100" step="5"><span id="opacityVal">100%</span></div>
+      </div>
       <div class="row">
         <div class="ico" data-icon="size"></div>
         <div class="text"><div class="title">Notch size</div><div class="desc">How big the notch and its panel are drawn.</div></div>
@@ -146,6 +193,11 @@
 
     <h2>Panel sections</h2>
     <div class="card">
+      <div class="row">
+        <div class="ico" data-icon="calendar"></div>
+        <div class="text"><div class="title">Next meeting</div><div class="desc">Your next calendar event, with a Join button for online meetings (set up under Calendar below).</div></div>
+        <label class="switch"><input type="checkbox" data-section="calendar"><span></span></label>
+      </div>
       <div class="row">
         <div class="ico" data-icon="toggles"></div>
         <div class="text"><div class="title">Quick toggles</div><div class="desc">Wi‑Fi, Bluetooth, microphone and dark mode buttons.</div></div>
@@ -213,6 +265,45 @@
           <div class="note" style="margin-top:8px">Weather comes from Open-Meteo (free, no account). Only the city name you search and its coordinates are sent.</div>
         </div>
         <div class="seg" id="units"><button data-units="celsius">°C</button><button data-units="fahrenheit">°F</button></div>
+      </div>
+    </div>
+
+    <h2>Calendar</h2>
+    <div class="card">
+      <div class="row">
+        <div class="ico" data-icon="calendar"></div>
+        <div class="text"><div class="title">Meeting reminders</div><div class="desc">The notch counts down to your next meeting, alerts you before it starts and lets you join in one click.</div></div>
+        <label class="switch"><input type="checkbox" id="calendarEnabled"><span></span></label>
+      </div>
+      <div class="row" id="calRow" style="align-items:flex-start">
+        <div class="ico" style="visibility:hidden"></div>
+        <div class="text">
+          <div class="title">Your calendars</div>
+          <div id="calList"></div>
+          <div class="addcal">
+            <input type="text" id="calInput" placeholder="Paste your calendar's secret iCal / ICS link…" autocomplete="off" spellcheck="false">
+            <button id="calAdd" class="primary">Add</button>
+          </div>
+          <div class="error hidden" id="calError"></div>
+          <details class="help">
+            <summary>Where do I find this link?</summary>
+            <ul>
+              <li><b>Google Calendar</b> (on the web): ⚙ Settings → click your calendar on the left → <i>Integrate calendar</i> → copy <i>Secret address in iCal format</i>.</li>
+              <li><b>Outlook / Microsoft 365</b>: ⚙ Settings → Calendar → Shared calendars → <i>Publish a calendar</i> → pick “Can view all details” → Publish → copy the <i>ICS</i> link.</li>
+              <li><b>iCloud</b>: in the Calendar app, share the calendar as a <i>Public Calendar</i> and copy its link.</li>
+            </ul>
+          </details>
+          <div class="note" style="margin-top:8px">The link stays on this PC (in your settings file) and is only used to download your events. Anyone with the link can see your calendar, so don't share it.</div>
+          <div class="wx hidden" id="calPreview"></div>
+        </div>
+      </div>
+      <div class="row" id="leadRow">
+        <div class="ico" style="visibility:hidden"></div>
+        <div class="text"><div class="title">Remind me</div><div class="desc">You get a second alert when the meeting starts.</div></div>
+        <select id="calLead" style="min-width:170px">
+          <option value="1">1 minute before</option><option value="2">2 minutes before</option><option value="5">5 minutes before</option>
+          <option value="10">10 minutes before</option><option value="15">15 minutes before</option>
+        </select>
       </div>
     </div>
 

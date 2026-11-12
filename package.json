@@ -1,8 +1,8 @@
 {
   "name": "windows-notch",
   "productName": "Windows Notch",
-  "version": "0.3.1",
-  "description": "A MacBook-style notch for Windows: now playing, volume & brightness HUD, quick toggles, File Shelf, clipboard history, weather and more.",
+  "version": "0.4.0",
+  "description": "A MacBook-style notch for Windows: now playing, volume & brightness HUD, meeting reminders, quick toggles, File Shelf, clipboard history, weather and more.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -23,7 +23,8 @@
     "win32"
   ],
   "dependencies": {
-    "electron-updater": "^6.8.11"
+    "electron-updater": "^6.8.11",
+    "ical.js": "^2.2.1"
   },
   "devDependencies": {
     "electron": "^33.2.0",
@@ -43,6 +44,7 @@
       "preload-settings.js",
       "updater.js",
       "weather.js",
+      "calendar.js",
       "weather-icons.js",
       "notch.html",
       "notch.js",

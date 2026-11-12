@@ -1,10 +1,11 @@
 ﻿// Windows Notch: a MacBook-style notch for Windows (Electron main process)
-const { app, BrowserWindow, screen, ipcMain, shell, Menu, Tray, nativeImage, nativeTheme, globalShortcut, clipboard } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, shell, Menu, Tray, nativeImage, nativeTheme, globalShortcut, clipboard, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const updater = require('./updater');
 const { searchCity, fetchWeather } = require('./weather');
+const calendar = require('./calendar');
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -20,7 +21,7 @@ const ICON_PATH = path.join(__dirname, 'build', 'icon.png');
 // Each notch window is large enough for the biggest panel, but its *shape* is cut down to the notch
 // itself, so everything else on screen stays clickable (and files can be dropped on it).
 const NOTCH_W = 640;
-const NOTCH_H = 560;
+const NOTCH_H = 640;
 
 let tray = null;
 let helper = null;
@@ -39,10 +40,16 @@ const DEFAULTS = {
   shortcut: 'Ctrl+Alt+N',
   weather: { enabled: true, city: null, units: 'celsius' },   // city: { name, region, lat, lon }
   autoUpdate: true,
-  appearance: { size: 'normal', accent: 'blue' },             // size: compact | normal | large
-  sections: { toggles: true, sliders: true, shelf: true, timers: true },   // which parts the open panel shows
+  chargingAnimation: true,
+  // size: compact | normal | large · style: notch (flush with the top edge) | island (floating pill) · opacity: 40..100 %
+  appearance: { size: 'normal', accent: 'blue', style: 'notch', opacity: 100 },
+  sections: { toggles: true, sliders: true, shelf: true, timers: true, calendar: true },   // which parts the open panel shows
+  calendar: { enabled: true, urls: [], lead: 5 },             // urls: private ICS links · lead: minutes before a meeting to alert
 };
 const SIZES = ['compact', 'normal', 'large'];
+const STYLES = ['notch', 'island'];
+const LEADS = [1, 2, 5, 10, 15];
+const CAL_MAX = 5;
 const ACCENTS = ['blue', 'violet', 'pink', 'orange', 'green', 'teal', 'graphite'];
 let settings = structuredClone(DEFAULTS);
 const userFile = (name) => path.join(app.getPath('userData'), name);
@@ -55,7 +62,9 @@ function loadSettings() {
     weather: { ...DEFAULTS.weather, ...(saved.weather || {}) },
     appearance: { ...DEFAULTS.appearance, ...(saved.appearance || {}) },
     sections: { ...DEFAULTS.sections, ...(saved.sections || {}) },
+    calendar: { ...DEFAULTS.calendar, ...(saved.calendar || {}) },
   };
+  if (!Array.isArray(settings.calendar.urls)) settings.calendar.urls = [];
 }
 function saveSettings() {
   fs.mkdirSync(app.getPath('userData'), { recursive: true });
@@ -142,7 +151,9 @@ function toNotch(channel, data) {
 }
 /** Look & layout preferences the notch page needs. */
 function notchPrefs() {
-  return { size: settings.appearance.size, accent: settings.appearance.accent, sections: settings.sections, clipboard: settings.clipboard };
+  const a = settings.appearance;
+  return { size: a.size, accent: a.accent, style: a.style, opacity: a.opacity, sections: settings.sections, clipboard: settings.clipboard,
+    charging: settings.chargingAnimation, calendarLead: settings.calendar.lead };
 }
 function sendPrefs() { toNotch('notch:prefs', notchPrefs()); }
 function notchFor(webContents) {
@@ -293,6 +304,55 @@ function scheduleWeather() {
   weatherTimer = setInterval(refreshWeather, 20 * 60 * 1000);
 }
 
+// ================================================================= calendar (private ICS links)
+// Every 15 minutes each link is downloaded and the next ~36 hours of events are sent to the notch, which
+// shows the next meeting in the panel and alerts before it starts. A link that fails keeps its last good events.
+let calTimer = null;
+let calSources = [];    // [{ url, name, ok, count, error, at, events }]
+let calBusy = false;
+let calAgain = false;   // the links changed while a refresh was running: refresh once more afterwards
+
+function calendarPayload() {
+  const c = settings.calendar;
+  if (!c.enabled || !c.urls.length) return { type: 'calendar', events: [] };
+  const seen = new Set();
+  const events = calSources.filter((s) => c.urls.includes(s.url)).flatMap((s) => s.events || [])
+    .filter((e) => (seen.has(e.id) ? false : seen.add(e.id)))
+    .sort((a, b) => a.start - b.start);
+  return { type: 'calendar', events };
+}
+function sendCalendar() {
+  lastSystem.calendar = calendarPayload();
+  toNotch('notch:system', lastSystem.calendar);
+  broadcastSettingsState();
+}
+async function refreshCalendar() {
+  const c = settings.calendar;
+  if (!c.enabled || !c.urls.length) { sendCalendar(); return; }
+  if (calBusy) { calAgain = true; return; }
+  calBusy = true;
+  broadcastSettingsState();
+  const now = Date.now(), from = now - 12 * 3600e3, to = now + 36 * 3600e3;
+  const urls = [...c.urls];
+  const results = await Promise.allSettled(urls.map(async (url) => calendar.eventsBetween(await calendar.fetchIcs(url), from, to)));
+  calSources = urls.map((url, i) => {
+    const r = results[i];
+    const prev = calSources.find((s) => s.url === url);
+    if (r.status === 'fulfilled') return { url, name: r.value.name, ok: true, count: r.value.events.length, at: Date.now(), events: r.value.events };
+    const msg = (r.reason && r.reason.message) || 'Couldn’t load this calendar.';
+    console.error(`[calendar] ${calendar.hostOf(url)}: ${msg}`);   // never log the secret link itself
+    return { url, name: prev && prev.name, ok: false, error: msg, at: Date.now(), events: prev ? prev.events : [] };
+  });
+  calBusy = false;
+  sendCalendar();
+  if (calAgain) { calAgain = false; refreshCalendar(); }
+}
+function scheduleCalendar() {
+  clearInterval(calTimer);
+  refreshCalendar();
+  calTimer = setInterval(refreshCalendar, 15 * 60 * 1000);
+}
+
 // ================================================================= clipboard history
 // Text only, kept in memory only (never written to disk), cleared on quit. Items that password
 // managers mark as private (the standard Windows clipboard flags) are never recorded.
@@ -394,6 +454,14 @@ function settingsState() {
     shortcutActive: !!registeredShortcut,
     update: updater.getState(),
     weather: lastSystem.weather || null,
+    calendar: {
+      sources: settings.calendar.urls.map((url) => {
+        const s = calSources.find((x) => x.url === url);
+        return { url, host: calendar.hostOf(url), name: s ? s.name : null, ok: s ? s.ok : null, count: s ? s.count : 0, error: s ? s.error : null, at: s ? s.at : null };
+      }),
+      next: calendarPayload().events.find((e) => !e.allDay && e.end > Date.now()) || null,
+      loading: calBusy,
+    },
     repo: REPO_URL,
   };
 }
@@ -477,6 +545,41 @@ async function applySetting(key, value) {
       settings.sections[value.name] = !!value.on;
       sendPrefs();
       break;
+    case 'style':
+      if (!STYLES.includes(value)) return 'Unknown style';
+      settings.appearance.style = value;
+      sendPrefs();
+      break;
+    case 'opacity': {
+      const v = Math.round(Number(value));
+      if (!Number.isFinite(v)) return 'Bad opacity value';
+      settings.appearance.opacity = Math.max(40, Math.min(100, v));
+      sendPrefs();
+      break;
+    }
+    case 'chargingAnimation': settings.chargingAnimation = !!value; sendPrefs(); break;
+    case 'calendarEnabled': settings.calendar.enabled = !!value; scheduleCalendar(); break;
+    case 'calendarLead':
+      if (!LEADS.includes(Number(value))) return 'Unknown reminder time';
+      settings.calendar.lead = Number(value);
+      sendPrefs();
+      break;
+    case 'calendarAdd': {
+      const url = calendar.normalizeUrl(value);
+      if (!url) return 'That doesn’t look like a calendar link. It should start with https:// or webcal://';
+      if (settings.calendar.urls.includes(url)) return 'That calendar is already added.';
+      if (settings.calendar.urls.length >= CAL_MAX) return `You can add up to ${CAL_MAX} calendars.`;
+      settings.calendar.urls.push(url);
+      settings.calendar.enabled = true;
+      scheduleCalendar();
+      break;
+    }
+    case 'calendarRemove':
+      settings.calendar.urls = settings.calendar.urls.filter((u) => u !== value);
+      calSources = calSources.filter((s) => s.url !== value);
+      scheduleCalendar();
+      break;
+    case 'calendarRefresh': refreshCalendar(); break;
     default: return `Unknown setting: ${key}`;
   }
   return null;
@@ -529,6 +632,11 @@ ipcMain.on('ready', (e) => {
   if (u.status === 'ready') e.sender.send('notch:system', { type: 'update', version: u.version, init: true });
 });
 ipcMain.on('notch:open-settings', () => openSettings());
+// "Join" on a meeting: only a link that really is in the calendar, and only a meeting service's https link.
+ipcMain.on('notch:open-link', (_e, link) => {
+  const known = calendarPayload().events.some((ev) => ev.link === link);
+  if (known && typeof link === 'string' && link.startsWith('https://') && calendar.LINK_RE.test(link)) shell.openExternal(link);
+});
 ipcMain.on('notch:toggle', (_e, what) => {
   if (['wifi', 'bt', 'mic', 'dark'].includes(what)) helperSend({ cmd: 'toggle', what });
 });
@@ -610,6 +718,9 @@ app.whenReady().then(async () => {
   resetClipWatch();                                   // start fresh: don't record what's already copied
   setInterval(pollClipboard, 800);
   scheduleWeather();
+  scheduleCalendar();
+  // after sleep, the events and the weather may be hours old
+  powerMonitor.on('resume', () => setTimeout(() => { refreshCalendar(); refreshWeather(); }, 5000));
 
   tray = new Tray(trayImage());
   tray.on('click', openSettings);

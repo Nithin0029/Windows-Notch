@@ -9,22 +9,34 @@
     --z: 1;                       /* notch size (Settings → Appearance) */
     --brand: #0a84ff;             /* accent colour (Settings → Appearance) */
     --brand-soft: color-mix(in srgb, var(--brand) 22%, transparent);
-    --brand-text: color-mix(in srgb, var(--brand) 55%, white); }
+    --brand-text: color-mix(in srgb, var(--brand) 55%, white);
+    --alpha: 1;                   /* background opacity (Settings → Appearance → Transparency) */
+    --ink: rgb(0 0 0 / var(--alpha));
+    --gap: 0px;                   /* distance from the top edge: 0 for the notch, a few px for the island */ }
   html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; color: #fff;
     font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
 
   /* ---- the notch: flush with the top edge, rounded bottom, concave "shoulders" like a MacBook notch */
-  #notch { position: absolute; top: 0; left: 50%; width: 200px; height: 34px; cursor: default;
+  #notch { position: absolute; top: var(--gap); left: 50%; width: 200px; height: 34px; cursor: default;
     transform: translate(-50%, -110%) scale(var(--z)); transform-origin: 50% 0;
     transition: width .6s var(--spring), height .6s var(--spring), transform .4s var(--spring); }
   #notch.ready { transform: translate(-50%, 0) scale(var(--z)); }
   #notch.ready.lift { transform: translate(-50%, 0) scale(calc(var(--z) * 1.05)); }
-  #body { position: absolute; inset: 0; background: #000; overflow: hidden; border-radius: 0 0 14px 14px;
-    transition: border-radius .6s var(--spring), box-shadow .4s; }
-  #notch[data-state="expanded"] #body { box-shadow: 0 16px 40px rgba(0, 0, 0, .45); }
+  #body { position: absolute; inset: 0; background: var(--ink); overflow: hidden; border-radius: 0 0 14px 14px;
+    transition: border-radius .6s var(--spring), box-shadow .4s, background .3s; }
+  #notch[data-state="expanded"] #body { box-shadow: 0 8px 18px rgba(0, 0, 0, .38); }
   .flare { position: absolute; top: 0; width: var(--flare); height: var(--flare); }
-  .flare.l { right: 100%; background: radial-gradient(circle at 0 100%, transparent calc(var(--flare) - .6px), #000 var(--flare)); }
-  .flare.r { left: 100%; background: radial-gradient(circle at 100% 100%, transparent calc(var(--flare) - .6px), #000 var(--flare)); }
+  .flare.l { right: 100%; background: radial-gradient(circle at 0 100%, transparent calc(var(--flare) - .6px), var(--ink) var(--flare)); }
+  .flare.r { left: 100%; background: radial-gradient(circle at 100% 100%, transparent calc(var(--flare) - .6px), var(--ink) var(--flare)); }
+
+  /* ---- island style: a floating pill just below the top edge, no shoulders, a hairline edge */
+  html.island .flare { display: none; }
+  html.island #body { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07); }
+  html.island #notch[data-state="expanded"] #body { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07), 0 8px 18px rgba(0, 0, 0, .38); }
+  /* ---- see-through background: keep text readable over a bright wallpaper */
+  html.glass .layer { text-shadow: 0 1px 3px rgba(0, 0, 0, .55); }
+  html.glass #body { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+  html.glass:not(.island) #body { box-shadow: inset 0 -1px 0 rgba(255, 255, 255, .08); }
 
   .layer { position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center;
     opacity: 0; filter: blur(8px); transform: scale(.92); pointer-events: none;
@@ -185,6 +197,45 @@
     background: rgba(70, 70, 76, .95); color: #fff; opacity: 0; transition: opacity .12s; }
   .tile:hover .tx { opacity: 1; }
   .tx:hover { background: #ff453a; }
+
+  /* ---- charging animation: the notch widens, a green light sweeps across and the battery fills up */
+  .chg { position: relative; width: 100%; height: 38px; box-sizing: border-box; padding: 0 14px 0 16px; display: flex; align-items: center;
+    justify-content: space-between; overflow: hidden; }
+  .chg::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(100deg, transparent 25%, rgba(48, 209, 88, .32) 50%, transparent 75%);
+    transform: translateX(-110%); animation: sweep 1.5s cubic-bezier(.3, .6, .3, 1) .3s both; }
+  .chg.full::before { display: none; }
+  @keyframes sweep { to { transform: translateX(110%); } }
+  .chg .cl { position: relative; display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; }
+  .chg .cl svg { width: 15px; height: 15px; color: #30d158; animation: zap 1.6s ease-in-out .2s both; }
+  @keyframes zap { 0% { transform: scale(.4); opacity: 0; } 30% { transform: scale(1.25); opacity: 1; } 55%, 100% { transform: scale(1); } }
+  .chg .cr { position: relative; display: flex; align-items: center; gap: 9px; color: #30d158; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .bigbat { position: relative; width: 34px; height: 17px; }
+  .bigbat .shell { position: absolute; inset: 0 3px 0 0; border: 1.5px solid rgba(48, 209, 88, .55); border-radius: 5px; }
+  .bigbat .cap { position: absolute; right: 0; top: 5.5px; width: 2.5px; height: 6px; border-radius: 0 2px 2px 0; background: rgba(48, 209, 88, .55); }
+  .bigbat .fill { position: absolute; left: 3px; top: 3px; bottom: 3px; width: calc((100% - 9px) * var(--lvl)); border-radius: 2.5px;
+    background: #30d158; transform-origin: left center;
+    animation: fillup 1.2s var(--spring) .2s both, glow 1.8s ease-in-out 1.4s infinite; }
+  @keyframes fillup { from { transform: scaleX(0); } }
+  @keyframes glow { 0%, 100% { box-shadow: 0 0 4px rgba(48, 209, 88, .6); } 50% { box-shadow: 0 0 11px rgba(48, 209, 88, 1); } }
+
+  /* ---- calendar: next meeting in the panel, a countdown in the closed notch, alerts with Join */
+  .cal { display: flex; align-items: center; gap: 11px; margin-top: 14px; padding: 8px 8px 8px 9px; border-radius: 14px; background: rgba(255, 255, 255, .06); }
+  .calic { width: 32px; height: 34px; border-radius: 8px; background: rgba(255, 255, 255, .1); overflow: hidden; flex-shrink: 0; text-align: center; }
+  .calic b { display: block; height: 11px; background: var(--brand); font-size: 7.5px; line-height: 11px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; }
+  .calic span { display: block; font-size: 15px; line-height: 22px; font-weight: 600; }
+  .ticon .calic { width: 42px; height: 42px; border-radius: 10px; }
+  .ticon .calic b { height: 13px; font-size: 9px; line-height: 13px; }
+  .ticon .calic span { font-size: 19px; line-height: 29px; }
+  .calt { flex: 1; min-width: 0; }
+  .calt .t { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .calt .s { font-size: 11.5px; color: rgba(255, 255, 255, .6); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .calt .s .now { color: #30d158; font-weight: 600; }
+  .calt .s .soon { color: var(--brand-text); font-weight: 600; }
+  .join { width: auto; height: 28px; padding: 0 13px; border-radius: 14px; background: var(--brand); color: #fff; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+  .join:hover { background: color-mix(in srgb, var(--brand) 78%, white); }
+  .ccal { display: flex; align-items: center; gap: 5px; color: var(--brand-text); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ccal svg { width: 14px; height: 14px; }
 
   /* ---- drop zone (files dragged over the notch) */
   .dropzone { width: 400px; height: 100px; box-sizing: border-box; padding: 12px; }
