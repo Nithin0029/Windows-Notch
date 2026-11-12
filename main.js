@@ -38,9 +38,13 @@ function saveSettings() {
 }
 
 // ---------------------------------------------------------------- helper (PowerShell: media, volume, brightness, mic/cam)
+// In the installed app the code is packed into app.asar, which PowerShell can't read; the build
+// unpacks helper.ps1 next to it (app.asar.unpacked), so point there.
+const HELPER_PATH = path.join(__dirname, 'helper.ps1').replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`);
+
 function startHelper() {
   helper = spawn('powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'helper.ps1')],
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', HELPER_PATH],
     { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   let buf = '';
   helper.stdout.setEncoding('utf8');
@@ -239,7 +243,7 @@ function refreshTray() {
     { type: 'separator' },
     { label: 'Start with Windows', type: 'checkbox', checked: app.getLoginItemSettings(loginOpts()).openAtLogin,
       click: (m) => { app.setLoginItemSettings({ ...loginOpts(), openAtLogin: m.checked }); refreshTray(); } },
-    { label: 'Open Folder', click: () => shell.openPath(__dirname) },
+    { label: 'Open Folder', click: () => shell.openPath(app.isPackaged ? path.dirname(process.execPath) : __dirname) },
     { type: 'separator' },
     { label: 'Reload', click: () => notchWin?.reload() },
     { label: 'Quit Notch', click: () => app.quit() },
@@ -302,8 +306,14 @@ ipcMain.on('shelf:drag', (e, p) => {
 
 // ---------------------------------------------------------------- lifecycle
 app.whenReady().then(async () => {
-  app.setAppUserModelId('local.windows-notch');
+  app.setAppUserModelId('io.github.nithin0029.windows-notch');   // must match "appId" in package.json
   loadSettings();
+  // The installed app starts with Windows by default (it's a desktop shell piece); the tray menu can turn it off.
+  if (app.isPackaged && !settings.firstRunDone) {
+    app.setLoginItemSettings({ openAtLogin: true });
+    settings.firstRunDone = true;
+    saveSettings();
+  }
   createWindow();
   startHelper();
   await loadShelf();

@@ -28,24 +28,46 @@ A MacBook-style **notch** for Windows. It sits at the top centre of your screen,
 - **Fullscreen aware:** the notch hides while a game or video is fullscreen.
 - **Stays out of the way:** the window is shaped to the notch itself, so everything around it stays clickable.
 
-## Requirements
+## Download
 
-- Windows 10 or 11
-- [Node.js](https://nodejs.org/) 18 or later
-- Brightness control only works on built-in laptop screens.
+1. Get the latest **`Windows-Notch-Setup-x.y.z.exe`** from the [Releases page](https://github.com/Nithin0029/Windows-Notch/releases).
+2. Run it. It installs for your user only (no admin needed) and starts the notch straight away.
 
-## Getting started
+The notch starts with Windows automatically. To change that, right-click its tray icon. To uninstall, go to **Settings → Apps → Installed apps → Windows Notch**.
+
+> **"Windows protected your PC"?** The installer isn't code-signed (that costs money), so SmartScreen warns about it the first time. Click **More info → Run anyway**.
+
+Right-click the tray icon to:
+- quit or reload the notch
+- clear the Shelf
+- turn the volume-key takeover on or off
+- turn **Start with Windows** on or off
+
+Brightness control only works on built-in laptop screens.
+
+## Run from source
+
+You need Windows 10 or 11 and [Node.js](https://nodejs.org/) 18 or later.
 
 ```bash
-git clone https://github.com/Nithin0029/windows-notch.git
-cd windows-notch
+git clone https://github.com/Nithin0029/Windows-Notch.git
+cd Windows-Notch
 npm install
 npm start
 ```
 
 After installing, you can also double-click **`Start Notch.cmd`** to launch it without a terminal.
 
-Right-click the tray icon to quit, reload, clear the Shelf, turn the volume-key takeover on or off, or turn on **Start with Windows**.
+### Build the installer
+
+```bash
+npm run dist
+```
+
+This creates `dist/Windows-Notch-Setup-<version>.exe`. To publish a new version:
+1. Raise `"version"` in `package.json`.
+2. Run the build.
+3. Attach the `.exe` to a new GitHub Release.
 
 ## How it works
 
@@ -54,6 +76,7 @@ Right-click the tray icon to quit, reload, clear the Shelf, turn the volume-key 
 | `main.js` | Electron main process: a transparent, always-on-top window shaped to the notch, the volume keys, the Shelf and the tray menu |
 | `notch.html` / `notch.js` | The notch UI and all its states (idle, alert, volume bar, panel, drop zone) |
 | `preload.js` | A small, safe bridge between the UI and the main process |
+| `build/icon.png` | The app icon, used by the installer |
 | `helper.ps1` | A background PowerShell process that talks to Windows (see below) |
 
 `helper.ps1` reads these from Windows:
@@ -73,7 +96,7 @@ It sends JSON lines to the main process, and has no extra dependencies to instal
 - [ ] Clipboard history
 - [ ] Quick controls: Wi‑Fi, Bluetooth, Focus
 - [ ] Calendar: "next meeting in 5 min"
-- [ ] Packaged installer (`.exe`)
+- [x] Packaged installer (`.exe`)
 
 ## License
 

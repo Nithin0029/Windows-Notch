@@ -1,16 +1,62 @@
 {
   "name": "windows-notch",
+  "productName": "Windows Notch",
   "version": "0.1.0",
   "description": "A MacBook-style notch for Windows: now playing, volume & brightness HUD, mic/camera indicators, battery and timers.",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64",
+    "pack": "electron-builder --win dir --x64"
   },
-  "keywords": ["windows", "notch", "dynamic-island", "electron", "desktop", "customization"],
+  "keywords": [
+    "windows",
+    "notch",
+    "dynamic-island",
+    "electron",
+    "desktop",
+    "customization"
+  ],
   "author": "Nithin0029",
   "license": "MIT",
-  "os": ["win32"],
+  "os": [
+    "win32"
+  ],
   "devDependencies": {
-    "electron": "^33.2.0"
+    "electron": "^33.2.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "io.github.nithin0029.windows-notch",
+    "productName": "Windows Notch",
+    "copyright": "Copyright © 2026 Nithin0029",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "notch.html",
+      "notch.js",
+      "helper.ps1",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "helper.ps1"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Windows Notch",
+      "runAfterFinish": true,
+      "artifactName": "Windows-Notch-Setup-${version}.exe"
+    }
   }
 }
