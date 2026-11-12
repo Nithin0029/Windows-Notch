@@ -1,5 +1,5 @@
 ﻿// MacBook-style notch for Windows
-const { app, BrowserWindow, screen, ipcMain, shell, Menu, Tray, nativeImage, nativeTheme, globalShortcut } = require('electron');
+const { app, BrowserWindow, screen, ipcMain, shell, Menu, Tray, nativeImage, nativeTheme, globalShortcut, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -15,7 +15,7 @@ app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 // The window is large enough for the biggest panel, but its *shape* is cut down to the
 // notch itself, so everything else on screen stays clickable (and files can be dropped on it).
 const NOTCH_W = 640;
-const NOTCH_H = 480;
+const NOTCH_H = 560;
 
 let notchWin = null;
 let tray = null;
@@ -26,7 +26,7 @@ let lastMedia = null;
 const lastSystem = {};   // latest volume / brightness / privacy / power, replayed when the notch (re)loads
 
 // ---------------------------------------------------------------- settings
-const DEFAULTS = { volumeKeys: true };
+const DEFAULTS = { volumeKeys: true, clipboard: true };
 let settings = { ...DEFAULTS };
 const userFile = (name) => path.join(app.getPath('userData'), name);
 function loadSettings() {
@@ -88,6 +88,7 @@ function onHelper(m) {
     case 'brightness':
     case 'privacy':
     case 'power':
+    case 'toggles':
       lastSystem[m.type] = { ...m, init: true };   // replays never trigger the HUD
       toNotch('notch:system', m);
       break;
@@ -122,6 +123,37 @@ function updateVolumeKeys() {
     for (const key of Object.keys(VOLUME_KEYS)) globalShortcut.unregister(key);
   }
   volumeKeysActive = want;
+}
+
+// ---------------------------------------------------------------- clipboard history
+// Text only, kept in memory only (never written to disk), cleared on quit. Items that password
+// managers mark as private (the standard Windows clipboard flags) are never recorded.
+const CLIP_MAX = 15;
+let clipItems = [];        // [{ id, text, at }]
+let clipSeq = 0;
+let lastClipText = '';
+
+function clipIsPrivate() {
+  try { if (clipboard.readBuffer('ExcludeClipboardContentFromMonitorProcessing').length) return true; } catch { /* format not present */ }
+  try {
+    const b = clipboard.readBuffer('CanIncludeInClipboardHistory');
+    if (b.length >= 4 && b.readUInt32LE(0) === 0) return true;
+  } catch { /* format not present */ }
+  return false;
+}
+function sendClips() {
+  toNotch('notch:clip', clipItems.map((c) => ({ id: c.id, at: c.at, preview: c.text.replace(/\s+/g, ' ').trim().slice(0, 160) })));
+}
+function pollClipboard() {
+  if (!settings.clipboard) return;
+  let text = '';
+  try { text = clipboard.readText(); } catch { return; }
+  if (!text || text === lastClipText) return;
+  lastClipText = text;
+  if (!text.trim() || clipIsPrivate()) { if (process.env.NOTCH_DEBUG) console.log('[clip] skipped (private or blank)'); return; }
+  if (process.env.NOTCH_DEBUG) console.log(`[clip] recorded ${text.length} chars`);
+  clipItems = [{ id: ++clipSeq, text: text.slice(0, 20000), at: Date.now() }, ...clipItems.filter((c) => c.text !== text)].slice(0, CLIP_MAX);
+  sendClips();
 }
 
 // ---------------------------------------------------------------- file shelf
@@ -240,6 +272,13 @@ function refreshTray() {
     { label: 'Use notch for volume keys', type: 'checkbox', checked: settings.volumeKeys,
       click: (m) => { settings.volumeKeys = m.checked; saveSettings(); updateVolumeKeys(); } },
     { label: 'Clear Shelf', enabled: shelf.length > 0, click: () => { shelf = []; saveShelf(); sendShelf(); refreshTray(); } },
+    { label: 'Clipboard history', type: 'checkbox', checked: settings.clipboard,
+      click: (m) => {
+        settings.clipboard = m.checked; saveSettings();
+        if (!m.checked) clipItems = [];
+        try { lastClipText = clipboard.readText(); } catch { lastClipText = ''; }   // don't pick up what's already copied
+        sendClips();
+      } },
     { type: 'separator' },
     { label: 'Start with Windows', type: 'checkbox', checked: app.getLoginItemSettings(loginOpts()).openAtLogin,
       click: (m) => { app.setLoginItemSettings({ ...loginOpts(), openAtLogin: m.checked }); refreshTray(); } },
@@ -274,7 +313,22 @@ ipcMain.on('ready', (e) => {
   if (lastMedia) e.sender.send('notch:media', lastMedia);
   for (const m of Object.values(lastSystem)) e.sender.send('notch:system', m);
   e.sender.send('notch:shelf', shelf);
+  sendClips();
 });
+ipcMain.on('notch:toggle', (_e, what) => {
+  if (['wifi', 'bt', 'mic', 'dark'].includes(what)) helperSend({ cmd: 'toggle', what });
+});
+ipcMain.on('clip:copy', (_e, id) => {
+  const item = clipItems.find((c) => c.id === id);
+  if (!item) return;
+  lastClipText = item.text;                 // don't record our own copy as a new item…
+  clipboard.writeText(item.text);
+  item.at = Date.now();                     // …but move it back to the top
+  clipItems = [item, ...clipItems.filter((c) => c !== item)];
+  sendClips();
+});
+ipcMain.on('clip:remove', (_e, id) => { clipItems = clipItems.filter((c) => c.id !== id); sendClips(); });
+ipcMain.on('clip:clear', () => { clipItems = []; sendClips(); });
 ipcMain.on('notch:media', (_e, action) => helperSend({ cmd: 'media', action }));
 ipcMain.on('notch:volume', (_e, change) => {
   if (change && typeof change.delta === 'number') helperSend({ cmd: 'volume', delta: change.delta });
@@ -318,6 +372,8 @@ app.whenReady().then(async () => {
   startHelper();
   await loadShelf();
   updateVolumeKeys();
+  try { lastClipText = clipboard.readText(); } catch { /* empty */ }   // start fresh: don't record what's already copied
+  setInterval(pollClipboard, 800);
   tray = new Tray(trayImage());
   tray.setToolTip('Notch');
   refreshTray();

@@ -111,6 +111,43 @@
   .chip:hover { background: rgba(255, 255, 255, .2); }
   .chip.warn { background: rgba(255, 159, 10, .2); color: #ffb340; }
 
+  /* ---- quick toggles */
+  .toggles { display: flex; gap: 8px; margin-top: 14px; }
+  .tg { flex: 1; width: auto; height: auto; border-radius: 14px; padding: 8px 0 7px; display: flex; flex-direction: column; align-items: center; gap: 5px;
+    background: rgba(255, 255, 255, .06); }
+  .tg:hover { background: rgba(255, 255, 255, .11); }
+  .tgi { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .12);
+    color: rgba(255, 255, 255, .85); transition: background .2s, color .2s; }
+  .tgi svg { width: 17px; height: 17px; }
+  .tgl { font-size: 11px; font-weight: 500; color: rgba(255, 255, 255, .65); white-space: nowrap; }
+  .tg.on .tgi { background: #0a84ff; color: #fff; }
+  .tg.on .tgl { color: rgba(255, 255, 255, .9); }
+  .tg.warn.on .tgi { background: #ff453a; }
+  .tg.violet.on .tgi { background: #7c6cf2; }
+
+  /* ---- clipboard button + page */
+  .csep { width: 1px; height: 18px; background: rgba(255, 255, 255, .14); align-self: center; margin: 0 2px; }
+  .clipbtn { display: inline-flex; align-items: center; gap: 4px; padding: 0 9px; }
+  .clipbtn svg { width: 14px; height: 14px; }
+  .chead { display: flex; align-items: center; justify-content: space-between; }
+  .chead .chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 10px 0 6px; margin: 0; }
+  .chead .chip svg { width: 14px; height: 14px; }
+  .ctitle { font-size: 14px; font-weight: 600; }
+  .clist { margin-top: 10px; display: flex; flex-direction: column; gap: 3px; max-height: 300px; overflow-y: auto; scrollbar-width: none; }
+  .clist::-webkit-scrollbar { display: none; }
+  .citem { position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px;
+    background: rgba(255, 255, 255, .05); transition: background .15s; }
+  .citem:hover { background: rgba(255, 255, 255, .11); }
+  .citem.copied { background: rgba(48, 209, 88, .18); }
+  .ctext { flex: 1; min-width: 0; font-size: 12.5px; color: rgba(255, 255, 255, .88); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cago { font-size: 11px; color: rgba(255, 255, 255, .4); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .citem.copied .cago { color: #30d158; font-weight: 600; }
+  .cx { width: 18px; height: 18px; font-size: 13px; line-height: 1; opacity: 0; background: rgba(255, 255, 255, .12); flex-shrink: 0; }
+  .citem:hover .cx { opacity: 1; }
+  .cx:hover { background: #ff453a; }
+  .cempty { display: flex; align-items: center; gap: 14px; padding: 22px 8px 10px; font-size: 12.5px; color: rgba(255, 255, 255, .7); line-height: 1.5; }
+  .cempty > svg { width: 30px; height: 30px; color: rgba(255, 255, 255, .35); flex-shrink: 0; }
+
   /* ---- file shelf */
   .sbadge { display: flex; align-items: center; gap: 4px; padding: 0 7px; height: 20px; border-radius: 10px;
     background: rgba(10, 132, 255, .22); color: #64b5ff; font-size: 11.5px; font-weight: 700; }

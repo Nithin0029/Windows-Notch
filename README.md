@@ -2,7 +2,7 @@
 
 A MacBook-style **notch** for Windows. It sits at the top centre of your screen, shows what's going on, and gets out of the way when it isn't needed.
 
-<!-- Add a screenshot or GIF here, e.g. ![windows-notch](docs/demo.gif) -->
+![Windows Notch in its different states: idle, now playing, volume bar, file drop zone, and the open panel](docs/screenshot.png)
 
 ## Features
 
@@ -20,11 +20,19 @@ A MacBook-style **notch** for Windows. It sits at the top centre of your screen,
   Files are never moved or copied; the Shelf only remembers where they are.
 - **Privacy dots:** an orange dot shows while an app uses the microphone, a green dot while it uses the camera, and a short alert names the app.
 - **Alerts:** track changes, charger plugged in or unplugged, low battery, timer finished.
+- **Quick toggles:** one-click **Wi‑Fi**, **Bluetooth**, **microphone mute** and **dark/light mode**, right in the panel.
+- **Clipboard history:** your last 15 copied texts. Click one to copy it again.
+  - It's kept in memory only, never saved to disk.
+  - Passwords that password managers mark as private are skipped.
+  - You can turn it off in the tray menu.
+
+  <img src="docs/clipboard.png" width="380" alt="Clipboard history page in the notch panel">
 - **Panel (click the notch; move the pointer away or click the notch again to close it):**
   - media controls with a progress bar, or a big clock, the date and a battery ring when nothing is playing
+  - quick toggles
   - volume and brightness sliders
   - your Shelf
-  - quick timers (1, 5, 15, 25 minutes)
+  - quick timers (1, 5, 15, 25 minutes) and the clipboard button
 - **Fullscreen aware:** the notch hides while a game or video is fullscreen.
 - **Stays out of the way:** the window is shaped to the notch itself, so everything around it stays clickable.
 
@@ -41,6 +49,7 @@ Right-click the tray icon to:
 - quit or reload the notch
 - clear the Shelf
 - turn the volume-key takeover on or off
+- turn clipboard history on or off
 - turn **Start with Windows** on or off
 
 Brightness control only works on built-in laptop screens.
@@ -86,6 +95,7 @@ This creates `dist/Windows-Notch-Setup-<version>.exe`. To publish a new version:
 - which apps are using the mic or camera, through Windows' privacy records
 - whether the PC has a battery
 - whether a fullscreen app is in front
+- Wi‑Fi and Bluetooth state, through WinRT radios, plus mic mute and dark mode (it also switches them)
 
 It sends JSON lines to the main process, and has no extra dependencies to install.
 
@@ -93,8 +103,10 @@ It sends JSON lines to the main process, and has no extra dependencies to instal
 
 - [x] Hide the built-in Windows volume pop-up
 - [x] File shelf: drop files into the notch, then drag them out later
-- [ ] Clipboard history
-- [ ] Quick controls: Wi‑Fi, Bluetooth, Focus
+- [x] Clipboard history
+- [x] Quick toggles: Wi‑Fi, Bluetooth, mic mute, dark mode
+- [ ] Do Not Disturb / Focus toggle (Windows has no public API for it yet)
+- [ ] Auto-update from GitHub Releases
 - [ ] Calendar: "next meeting in 5 min"
 - [x] Packaged installer (`.exe`)
 

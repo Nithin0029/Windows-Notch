@@ -107,6 +107,43 @@ public static class SysNative {
   }
   public static void ToggleMute() { IAudioEndpointVolume v = Vol(); if (v == null) return; bool m; v.GetMute(out m); v.SetMute(!m, Guid.Empty); }
 
+  // ---- microphone (default recording device) mute
+  static IAudioEndpointVolume mic; static int micAge;
+  static IAudioEndpointVolume Mic() {
+    if (mic == null || ++micAge > 20) {
+      micAge = 0;
+      try {
+        IMMDeviceEnumerator en = (IMMDeviceEnumerator)new MMDeviceEnumeratorCom(); IMMDevice dev;
+        if (en.GetDefaultAudioEndpoint(1, 0, out dev) != 0) { mic = null; return null; }
+        Guid iid = typeof(IAudioEndpointVolume).GUID; object o;
+        dev.Activate(ref iid, 23, IntPtr.Zero, out o); mic = (IAudioEndpointVolume)o;
+      } catch { mic = null; }
+    }
+    return mic;
+  }
+  /// <summary>-1 = no microphone, 0 = live, 1 = muted</summary>
+  public static int MicMuted() { try { IAudioEndpointVolume m = Mic(); if (m == null) return -1; bool b; m.GetMute(out b); return b ? 1 : 0; } catch { mic = null; return -1; } }
+  public static void ToggleMic() { IAudioEndpointVolume m = Mic(); if (m == null) return; bool b; m.GetMute(out b); m.SetMute(!b, Guid.Empty); }
+
+  // ---- dark / light mode (apps + Windows)
+  const string PersonalizeKey = @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+  static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, string lParam, uint flags, uint timeout, out IntPtr result);
+  public static bool IsDark() {
+    using (RegistryKey k = Registry.CurrentUser.OpenSubKey(PersonalizeKey)) {
+      object v = k == null ? null : k.GetValue("AppsUseLightTheme");
+      return v is int && (int)v == 0;
+    }
+  }
+  public static void SetDark(bool dark) {
+    using (RegistryKey k = Registry.CurrentUser.CreateSubKey(PersonalizeKey)) {
+      k.SetValue("AppsUseLightTheme", dark ? 0 : 1, RegistryValueKind.DWord);
+      k.SetValue("SystemUsesLightTheme", dark ? 0 : 1, RegistryValueKind.DWord);
+    }
+    IntPtr r;   // tell running apps and the taskbar that the colour mode changed
+    SendMessageTimeout((IntPtr)0xffff, 0x001A, IntPtr.Zero, "ImmersiveColorSet", 0x0002, 200, out r);
+  }
+
   // ---- brightness (laptop panels only; event driven)
   static ManagementEventWatcher watcher;
   public static volatile int BrightLevel = -1;
@@ -248,6 +285,60 @@ function Media-Command($action) {
   }
 }
 
+# ---------------------------------------------------------------- quick toggles: Wi-Fi, Bluetooth (WinRT radios), mic, dark mode
+$script:radiosOk = $false
+$script:radioListType = $null
+try {
+  if ($script:asTaskGeneric) {
+    $null = [Windows.Devices.Radios.Radio, Windows.System.Devices, ContentType = WindowsRuntime]
+    $script:radioListType = [System.Collections.Generic.IReadOnlyList[Windows.Devices.Radios.Radio]]
+    $access = Await ([Windows.Devices.Radios.Radio]::RequestAccessAsync()) ([Windows.Devices.Radios.RadioAccessStatus])
+    $script:radiosOk = ([string]$access -eq 'Allowed')
+  }
+} catch { Emit @{ type = 'error'; message = "radios unavailable: $($_.Exception.Message)" } }
+
+function Get-Radios {
+  if (-not $script:radiosOk) { return @() }
+  $list = Await ([Windows.Devices.Radios.Radio]::GetRadiosAsync()) ($script:radioListType)
+  if ($null -eq $list) { return @() }
+  return @($list)
+}
+function Radio-State($radios, $kind) {
+  # 'on' / 'off' / $null when the PC has no such radio (or it's disabled in hardware/airplane mode)
+  foreach ($r in $radios) {
+    if ([string]$r.Kind -eq $kind) {
+      $s = [string]$r.State
+      if ($s -eq 'On') { return 'on' } elseif ($s -eq 'Off') { return 'off' } else { return $null }
+    }
+  }
+  return $null
+}
+function Toggle-Radio($kind) {
+  foreach ($r in (Get-Radios)) {
+    if ([string]$r.Kind -eq $kind) {
+      $target = if ([string]$r.State -eq 'On') { [Windows.Devices.Radios.RadioState]::Off } else { [Windows.Devices.Radios.RadioState]::On }
+      $null = Await ($r.SetStateAsync($target)) ([Windows.Devices.Radios.RadioAccessStatus])
+      return
+    }
+  }
+}
+
+$script:lastToggles = $null
+function Poll-Toggles {
+  $radios = Get-Radios
+  $mic = [SysNative]::MicMuted()
+  $state = [ordered]@{
+    wifi = Radio-State $radios 'WiFi'
+    bt = Radio-State $radios 'Bluetooth'
+    mic = if ($mic -lt 0) { $null } elseif ($mic -eq 1) { 'muted' } else { 'live' }
+    dark = [SysNative]::IsDark()
+  }
+  $k = ($state.Values | % { "$_" }) -join '|'
+  if ($k -eq $script:lastToggles) { return }
+  $script:lastToggles = $k
+  Emit @{ type = 'toggles'; wifi = $state.wifi; bt = $state.bt; mic = $state.mic; dark = $state.dark }
+}
+
 # ---------------------------------------------------------------- commands from the app
 function Handle-Command($c) {
   switch ($c.cmd) {
@@ -266,6 +357,15 @@ function Handle-Command($c) {
     }
     'mute' { [SysNative]::ToggleMute(); $script:lastVolPoll = 0 }
     'brightness' { if ($script:brightOk) { [SysNative]::SetBrightness([int]$c.level) } }
+    'toggle' {
+      switch ($c.what) {
+        'wifi' { Toggle-Radio 'WiFi' }
+        'bt' { Toggle-Radio 'Bluetooth' }
+        'mic' { [SysNative]::ToggleMic() }
+        'dark' { [SysNative]::SetDark(-not [SysNative]::IsDark()) }
+      }
+      $script:lastTogglePoll = 0   # report the new state right away
+    }
   }
 }
 
@@ -298,7 +398,7 @@ if ($script:brightOk) { Emit @{ type = 'brightness'; level = [SysNative]::Bright
 Emit @{ type = 'power'; hasBattery = [SysNative]::HasBattery() }
 
 $pending = $in.ReadLineAsync()
-$script:lastMedia = 0; $lastFs = 0; $fsState = $false; $script:lastVolPoll = 0; $lastPriv = 0
+$script:lastMedia = 0; $lastFs = 0; $fsState = $false; $script:lastVolPoll = 0; $lastPriv = 0; $script:lastTogglePoll = 0
 while ($true) {
   if ($pending.IsCompleted) {
     if ($pending.IsFaulted -or $null -eq $pending.Result) { break }   # parent went away
@@ -311,6 +411,7 @@ while ($true) {
   if ($script:mediaOk -and [math]::Abs($now - $script:lastMedia) -ge 1000) { $script:lastMedia = $now; try { Poll-Media } catch { } }
   if ([math]::Abs($now - $script:lastVolPoll) -ge 120) { $script:lastVolPoll = $now; try { Poll-Volume } catch { } }
   if ([math]::Abs($now - $lastPriv) -ge 1500) { $lastPriv = $now; try { Poll-Privacy } catch { } }
+  if ([math]::Abs($now - $script:lastTogglePoll) -ge 2000) { $script:lastTogglePoll = $now; try { Poll-Toggles } catch { } }
   if ([SysNative]::BrightChanged) { [SysNative]::BrightChanged = $false; Emit @{ type = 'brightness'; level = [SysNative]::BrightLevel } }
   if ([math]::Abs($now - $lastFs) -ge 1000) {
     $lastFs = $now

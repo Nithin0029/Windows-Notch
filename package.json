@@ -1,7 +1,7 @@
 {
   "name": "windows-notch",
   "productName": "Windows Notch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A MacBook-style notch for Windows: now playing, volume & brightness HUD, mic/camera indicators, battery and timers.",
   "main": "main.js",
   "scripts": {

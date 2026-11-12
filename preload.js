@@ -13,6 +13,11 @@ contextBridge.exposeInMainWorld('api', {
   shelfOpen: (p) => ipcRenderer.send('shelf:open', p),
   shelfReveal: (p) => ipcRenderer.send('shelf:reveal', p),
   shelfDrag: (p) => ipcRenderer.send('shelf:drag', p),
+  toggle: (what) => ipcRenderer.send('notch:toggle', what),            // 'wifi' | 'bt' | 'mic' | 'dark'
+  clipCopy: (id) => ipcRenderer.send('clip:copy', id),
+  clipRemove: (id) => ipcRenderer.send('clip:remove', id),
+  clipClear: () => ipcRenderer.send('clip:clear'),
+  onClip: (cb) => ipcRenderer.on('notch:clip', (_e, items) => cb(items)),
   onPointer: (cb) => ipcRenderer.on('notch:pointer', (_e, inside) => cb(inside)),   // pointer entered / left the notch
   onShelf: (cb) => ipcRenderer.on('notch:shelf', (_e, items) => cb(items)),
   media: (action) => ipcRenderer.send('notch:media', action),          // 'toggle' | 'next' | 'prev'

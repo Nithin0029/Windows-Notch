@@ -9,6 +9,9 @@ const st = {
   privacy: { mic: [], cam: [] },
   shelf: [],          // [{ path, name, dir, thumb }]
   dropping: false,    // files are being dragged over the notch
+  toggles: null,      // { wifi: 'on'|'off'|null, bt: ..., mic: 'live'|'muted'|null, dark: bool }
+  clips: [],          // clipboard history: [{ id, preview, at }]
+  view: 'main',       // which page of the open panel: 'main' | 'clip'
   expanded: false, toast: null, queue: [], hover: false,
 };
 const bootAt = Date.now();
@@ -32,6 +35,12 @@ const ICON = {
   cam: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="2.5" y="6" width="13.5" height="12" rx="3"/><path d="M17.5 10.2 21.5 7.5v9l-4-2.7z"/></svg>',
   tray: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.5l2.6-7.2c.3-.8 1-1.3 1.9-1.3h9c.9 0 1.6.5 1.9 1.3l2.6 7.2V18c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2z"/><path d="M3 13.5h5l1.5 2.5h5l1.5-2.5h5"/></svg>',
   folder: '<svg viewBox="0 0 24 24"><path d="M2.5 7c0-1.1.9-2 2-2h4.6l2 2.2h8.4c1.1 0 2 .9 2 2V18c0 1.1-.9 2-2 2h-15c-1.1 0-2-.9-2-2z" fill="#4aa8ff"/><path d="M2.5 9.5h19V18c0 1.1-.9 2-2 2h-15c-1.1 0-2-.9-2-2z" fill="#7cc4ff"/></svg>',
+  wifi: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2.5 9a14 14 0 0 1 19 0M5.8 12.6a9.2 9.2 0 0 1 12.4 0M9.1 16.1a4.5 4.5 0 0 1 5.8 0"/><circle cx="12" cy="19.3" r="1.3" fill="currentColor" stroke="none"/></svg>',
+  bt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 7.5l11 9-5.5 4.5V3l5.5 4.5-11 9"/></svg>',
+  micOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15.5 10.5V6a3.5 3.5 0 0 0-6.6-1.6M8.5 9v2.5a3.5 3.5 0 0 0 5.6 2.8M5.5 11a6.5 6.5 0 0 0 10.3 5.3M18.5 11a6.4 6.4 0 0 1-.5 2.5M12 17.5V21M3 3l18 18"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 14.6A8.6 8.6 0 0 1 9.4 3.5a.6.6 0 0 0-.8-.7A9.5 9.5 0 1 0 21.2 15.4a.6.6 0 0 0-.7-.8z"/></svg>',
+  clip: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="5" y="4.5" width="14" height="17" rx="2.5"/><path d="M9 4.5V4a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 4v.5" fill="currentColor"/><path d="M8.5 11h7M8.5 15h5" stroke-linecap="round"/></svg>',
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>',
   file: '<svg viewBox="0 0 24 24"><path d="M6 2.5h8l5 5V20c0 .8-.7 1.5-1.5 1.5h-11.5c-.8 0-1.5-.7-1.5-1.5V4c0-.8.7-1.5 1.5-1.5z" fill="#e9e9ee"/><path d="M14 2.5v4c0 .6.4 1 1 1h4" fill="#b9b9c2"/></svg>',
 };
 function speaker(level, muted) {
@@ -178,19 +187,55 @@ function expandedHTML() {
   } else {
     top = `<div class="clock"><div><div class="bigtime" id="e-time"></div><div class="date" id="e-date"></div></div>${batteryRing()}</div>`;
   }
+  if (st.view === 'clip') return clipViewHTML();
+  const clipBtn = `<button class="chip clipbtn" data-act="view-clip" title="Clipboard history">${ICON.clip}${st.clips.length || ''}</button>`;
   const trow = st.timer
-    ? `<div class="trow"><span class="tl">${ICON.timer}<span id="e-timer"></span> remaining</span><div class="chips"><button class="chip warn" data-act="cancel-timer">Cancel</button></div></div>`
-    : `<div class="trow"><span class="tl">${ICON.timer}Timer</span><div class="chips">${[1, 5, 15, 25].map((n) => `<button class="chip" data-timer="${n}">${n}m</button>`).join('')}</div>${m ? batteryChip() : ''}</div>`;
-  return `<div class="exp">${top}${slidersHTML()}${shelfHTML()}${trow}</div>`;
+    ? `<div class="trow"><span class="tl">${ICON.timer}<span id="e-timer"></span> remaining</span><div class="chips"><button class="chip warn" data-act="cancel-timer">Cancel</button>${clipBtn}</div></div>`
+    : `<div class="trow"><span class="tl">${ICON.timer}Timer</span><div class="chips">${[1, 5, 15, 25].map((n) => `<button class="chip" data-timer="${n}">${n}m</button>`).join('')}<span class="csep"></span>${clipBtn}</div></div>`;
+  return `<div class="exp">${top}${togglesHTML()}${slidersHTML()}${shelfHTML()}${trow}</div>`;
+}
+
+// ------------------------------------------------------------ quick toggles
+function togglesHTML() {
+  const t = st.toggles;
+  if (!t) return '';
+  const btn = (what, on, icon, label, cls = '') =>
+    `<button class="tg ${on ? 'on' : ''} ${cls}" data-toggle="${what}" title="${label}"><span class="tgi">${icon}</span><span class="tgl">${label}</span></button>`;
+  let s = '';
+  if (t.wifi) s += btn('wifi', t.wifi === 'on', ICON.wifi, 'Wi‑Fi');
+  if (t.bt) s += btn('bt', t.bt === 'on', ICON.bt, 'Bluetooth');
+  if (t.mic) s += btn('mic', t.mic === 'muted', t.mic === 'muted' ? ICON.micOff : ICON.mic, t.mic === 'muted' ? 'Mic off' : 'Mic on', 'warn');
+  s += btn('dark', t.dark, t.dark ? ICON.moon : ICON.sun, t.dark ? 'Dark' : 'Light', 'violet');
+  return `<div class="toggles">${s}</div>`;
+}
+
+// ------------------------------------------------------------ clipboard history page
+function ago(at) {
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (s < 60) return 'now';
+  if (s < 3600) return Math.floor(s / 60) + 'm';
+  if (s < 86400) return Math.floor(s / 3600) + 'h';
+  return Math.floor(s / 86400) + 'd';
+}
+function clipViewHTML() {
+  const list = st.clips.length
+    ? st.clips.map((c) => `<div class="citem" data-clip="${c.id}" title="Click to copy"><span class="ctext">${esc(c.preview)}</span>` +
+        `<span class="cago" data-at="${c.at}">${ago(c.at)}</span><button class="cx" data-act="clip-remove" data-clip="${c.id}" title="Remove">×</button></div>`).join('')
+    : `<div class="cempty">${ICON.clip}<div>Copy some text and it shows up here.<br><span class="muted">Kept in memory only · passwords are skipped</span></div></div>`;
+  return `<div class="exp clipview"><div class="chead"><button class="chip" data-act="view-main">${ICON.back}Back</button>` +
+    `<span class="ctitle">Clipboard</span>${st.clips.length ? '<button class="chip" data-act="clip-clear">Clear</button>' : '<span style="width:52px"></span>'}</div>` +
+    `<div class="clist">${list}</div></div>`;
 }
 
 // ------------------------------------------------------------ render
 function render() {
+  if (!st.expanded) st.view = 'main';          // the panel always reopens on its main page
   const state = st.dropping ? 'drop' : st.expanded ? 'expanded' : st.toast ? 'toast' : 'compact';
   const m = st.media, b = st.battery, p = st.privacy;
   const key = [state, m && m.track, m && m.status, m && m.dur > 0, st.art && st.art.length, !!st.timer,
     b && b.charging, b && Math.round(b.level * 100), st.toast && st.toast.id, p.mic.length > 0, p.cam.length > 0,
-    !!st.volume, st.brightness !== null, st.shelf.map((s) => s.path).join('|')].join('|');
+    !!st.volume, st.brightness !== null, st.shelf.map((s) => s.path).join('|'),
+    st.view, JSON.stringify(st.toggles), st.clips.map((c) => c.id).join(',')].join('|');
   if (key !== lastKey) {
     lastKey = key;
     const layer = L[state];
@@ -286,6 +331,7 @@ function tick() {
   setText('c-date', new Date().toLocaleDateString([], { weekday: 'short', day: 'numeric' }));
   setText('e-time', shortTime());
   setText('e-date', new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }));
+  for (const el of document.querySelectorAll('.citem:not(.copied) .cago')) el.textContent = ago(Number(el.dataset.at));
   if (st.timer) {
     const left = (st.timer.end - Date.now()) / 1000;
     if (left <= 0) { finishTimer(); return; }
@@ -445,6 +491,11 @@ document.addEventListener('click', (e) => {
     if (btn.dataset.timer) return startTimer(Number(btn.dataset.timer));
     const act = btn.dataset.act;
     if (act === 'cancel-timer') { st.timer = null; render(); return; }
+    if (btn.dataset.toggle) { flipToggle(btn.dataset.toggle); return; }
+    if (act === 'view-clip') { st.view = 'clip'; render(); return; }
+    if (act === 'view-main') { st.view = 'main'; render(); return; }
+    if (act === 'clip-clear') { api.clipClear(); return; }
+    if (act === 'clip-remove') { api.clipRemove(Number(btn.dataset.clip)); return; }
     if (act === 'shelf-clear') { api.shelfClear(); return; }
     if (act === 'shelf-remove') { const s = st.shelf[Number(btn.dataset.i)]; if (s) api.shelfRemove(s.path); return; }
     if (act) {
@@ -454,6 +505,13 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (e.target.closest('.tile')) return;     // tiles: double-click opens, drag moves out
+  const citem = e.target.closest('.citem');
+  if (citem) {                                // clipboard item: copy it again
+    api.clipCopy(Number(citem.dataset.clip));
+    citem.classList.add('copied');
+    citem.querySelector('.cago').textContent = 'Copied';
+    return;
+  }
   // Inside the open panel, only the top strip (where the notch sits) closes it; clicking the clock,
   // the date or empty space does nothing. Moving the pointer away also closes it.
   if (st.expanded && e.clientY > 40) return;
@@ -525,6 +583,23 @@ document.addEventListener('drop', async (e) => {
 });
 
 api.onShelf((items) => { st.shelf = Array.isArray(items) ? items : []; render(); });
+api.onClip((items) => {
+  st.clips = Array.isArray(items) ? items : [];
+  // a click on an item just copied it; keep the "Copied" mark visible for a moment before redrawing
+  const copied = document.querySelector('.citem.copied');
+  if (copied) setTimeout(render, 700); else render();
+});
+
+// Flip a quick toggle right away (so the button feels instant); the helper reports the real state within a moment.
+function flipToggle(what) {
+  const t = st.toggles;
+  if (!t) return;
+  if (what === 'wifi' || what === 'bt') t[what] = t[what] === 'on' ? 'off' : 'on';
+  else if (what === 'mic') t.mic = t.mic === 'muted' ? 'live' : 'muted';
+  else if (what === 'dark') t.dark = !t.dark;
+  api.toggle(what);
+  render();
+}
 
 // ------------------------------------------------------------ data sources
 api.onMedia((m) => {
@@ -553,6 +628,9 @@ api.onSystem((m) => {
     st.brightness = m.level;
     if (dragging) return;
     if (changed) showHud('brightness'); else render();
+  } else if (m.type === 'toggles') {
+    st.toggles = { wifi: m.wifi || null, bt: m.bt || null, mic: m.mic || null, dark: !!m.dark };
+    render();
   } else if (m.type === 'power') {
     hasBattery = !!m.hasBattery;
     if (batteryRef) { st.battery = hasBattery ? { level: batteryRef.level, charging: batteryRef.charging } : null; render(); }
